@@ -182,12 +182,17 @@ type AnyParamsInput<TParams extends object | ExtensionBlueprintDefineParams> =
           ) => ReturnType<ExtensionBlueprintDefineParams<TParams, TParams>>);
 
 /** @public */
-export type ExtensionDefinition<
-  T extends ExtensionDefinitionParameters = ExtensionDefinitionParameters,
-> = {
+export interface ExtensionDefinition<
+  TParams extends ExtensionDefinitionParameters = ExtensionDefinitionParameters,
+> {
   $$type: '@backstage/ExtensionDefinition';
-  readonly T: T;
+  readonly T: TParams;
+}
 
+/** @public */
+export interface OverridableExtensionDefinition<
+  T extends ExtensionDefinitionParameters = ExtensionDefinitionParameters,
+> extends ExtensionDefinition<T> {
   override<
     TExtensionConfigSchema extends {
       [key in string]: (zImpl: typeof z) => z.ZodType;
@@ -265,7 +270,7 @@ export type ExtensionDefinition<
           : UNewOutput,
         UFactoryOutput
       >,
-  ): ExtensionDefinition<{
+  ): OverridableExtensionDefinition<{
     kind: T['kind'];
     name: T['name'];
     output: ExtensionDataRef extends UNewOutput ? T['output'] : UNewOutput;
@@ -284,7 +289,7 @@ export type ExtensionDefinition<
         }>
       >;
   }>;
-};
+}
 
 /**
  * Creates a new extension definition for installation in a Backstage app.
@@ -342,7 +347,7 @@ export function createExtension<
     TConfigSchema,
     UFactoryOutput
   >,
-): ExtensionDefinition<{
+): OverridableExtensionDefinition<{
   config: string extends keyof TConfigSchema
     ? {}
     : {
@@ -518,7 +523,7 @@ export function createExtension<
 
           return deduplicatedResult.values();
         },
-      }) as ExtensionDefinition<any>;
+      }) as OverridableExtensionDefinition<any>;
     },
   });
 }

@@ -19,7 +19,7 @@ import { Expand } from '@backstage/types';
 import { OpaqueType } from '@internal/opaque';
 import {
   ExtensionAttachToSpec,
-  ExtensionDefinition,
+  OverridableExtensionDefinition,
   ResolvedExtensionInputs,
   VerifyExtensionFactoryOutput,
   createExtension,
@@ -231,7 +231,7 @@ export interface ExtensionBlueprint<
       : T['params'] extends ExtensionBlueprintDefineParams
       ? 'Error: This blueprint uses advanced parameter types and requires you to pass parameters as using the following callback syntax: `<blueprint>.make({ params: defineParams => defineParams(<params>) })`'
       : T['params'];
-  }): ExtensionDefinition<{
+  }): OverridableExtensionDefinition<{
     kind: T['kind'];
     name: string | undefined extends TName ? undefined : TName;
     config: T['config'];
@@ -306,7 +306,7 @@ export interface ExtensionBlueprint<
           : UNewOutput,
         UFactoryOutput
       >;
-  }): ExtensionDefinition<{
+  }): OverridableExtensionDefinition<{
     config: (string extends keyof TExtensionConfigSchema
       ? {}
       : {
@@ -519,7 +519,7 @@ export function createExtensionBlueprint<
             unwrapParams(args.params, ctx, defineParams, options.kind),
             ctx,
           ) as Iterable<ExtensionDataValue<any, any>>,
-      }) as ExtensionDefinition;
+      }) as OverridableExtensionDefinition;
     },
     makeWithOverrides(args) {
       return createExtension({
@@ -576,7 +576,7 @@ export function createExtensionBlueprint<
             },
           ) as Iterable<ExtensionDataValue<any, any>>;
         },
-      }) as ExtensionDefinition;
+      }) as OverridableExtensionDefinition;
     },
   } as ExtensionBlueprint<{
     kind: TKind;
