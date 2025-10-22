@@ -63,6 +63,11 @@ export const layoutComponents: Page[] = [
 
 export const components: Page[] = [
   {
+    title: 'Accordion',
+    slug: 'accordion',
+    status: 'alpha',
+  },
+  {
     title: 'Avatar',
     slug: 'avatar',
     status: 'alpha',
@@ -90,11 +95,6 @@ export const components: Page[] = [
   {
     title: 'Checkbox',
     slug: 'checkbox',
-    status: 'alpha',
-  },
-  {
-    title: 'Collapsible',
-    slug: 'collapsible',
     status: 'alpha',
   },
   {
