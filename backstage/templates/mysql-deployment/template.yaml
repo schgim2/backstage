@@ -14,7 +14,7 @@ metadata:
     - kubernetes
   annotations:
     backstage.io/techdocs-ref: dir:.
-    backstage.io/source-location: url:https://github.com/schgim2/backstage/tree/main/backstage/templates/mysql-deployment
+    backstage.io/source-location: url:file:///Users/gimseungcheol/workspace/bacstage_workspace/backstage/templates/mysql-deployment
 spec:
   owner: platform-team
   type: service
