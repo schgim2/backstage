@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: identity-provider
+  {% if values.enableMonitoring %}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9990"
+    prometheus.io/path: "/metrics"
+  {% endif %}
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: https
+    protocol: TCP
+  {% if values.enableMetrics %}
+  - name: metrics
+    port: 9990
+    targetPort: metrics
+    protocol: TCP
+  {% endif %}
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+
+---
+{% if values.replicas > 1 %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-headless
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: identity-provider
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: https
+    protocol: TCP
+  - name: jgroups
+    port: 7600
+    targetPort: 7600
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+{% endif %}
+
+---
+{% if values.databaseMode == "managed" and values.databaseType == "postgresql" %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+
+---
+{% if values.enableDatabaseHA %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-headless
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-read
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: database
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+    role: replica
+{% endif %}
+{% endif %}
+
+---
+{% if values.enableMonitoring %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-metrics
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9990
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+{% endif %}

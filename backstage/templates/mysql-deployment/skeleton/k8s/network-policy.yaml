@@ -1,0 +1,164 @@
+{% if values.enableNetworkPolicies %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: database
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow MySQL connections from within the namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ${{ values.namespace }}
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow monitoring scraping
+  {% if values.enableMonitoring %}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9104
+  {% endif %}
+  # Allow replication between MySQL instances
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 3306
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow replication between MySQL instances
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow backup uploads to cloud storage
+  {% if values.backupStorage in ['s3', 'gcs', 'azure'] %}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  {% endif %}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-backup-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: backup
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow connections to MySQL master
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+          app.kubernetes.io/instance: master
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow backup uploads to cloud storage
+  {% if values.backupStorage in ['s3', 'gcs', 'azure'] %}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  {% endif %}
+
+{% if values.enablePhpMyAdmin %}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-phpmyadmin-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: phpmyadmin
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: phpmyadmin
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow HTTP connections from ingress
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow connections to MySQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 3306
+{% endif %}
+{% endif %}

@@ -1,0 +1,117 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.App {
+  min-height: 100vh;
+}
+
+.App-header {
+  padding: 20px;
+  background-color: #282c34;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.home {
+  padding: 2rem;
+}
+
+.home-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: #282c34;
+}
+
+.counter-section {
+  margin: 2rem 0;
+}
+
+.counter-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.counter-buttons button {
+  padding: 0.5rem 1rem;
+  font-size: 1.2rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background-color: #007bff;
+  color: white;
+  transition: background-color 0.2s;
+}
+
+.counter-buttons button:hover {
+  background-color: #0056b3;
+}
+
+.about {
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.about h1 {
+  color: #282c34;
+  margin-bottom: 1rem;
+}
+
+.about ul {
+  text-align: left;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.about li {
+  margin: 0.5rem 0;
+}
+
+.navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: #282c34;
+  color: white;
+}
+
+.nav-brand h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.nav-links a {
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-color-scheme: light) {
+  .home-header {
+    color: #213547;
+  }
+}

@@ -1,0 +1,31 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: spring-boot-minimal
+  title: Spring Boot Minimal
+  description: Minimal Spring Boot template for testing
+  tags:
+    - spring-boot
+    - java
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          title: Application Name
+          description: Name for your Spring Boot application
+  steps:
+    - id: debug
+      name: Debug Step
+      action: debug:log
+      input:
+        message: "Creating Spring Boot app: ${{ parameters.name }}"
+  output:
+    text:
+      - title: Debug Output
+        content: "Spring Boot app ${{ parameters.name }} created successfully"

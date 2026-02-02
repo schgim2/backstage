@@ -1,0 +1,182 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: ${{ values.owner }}/${{ values.repo }}
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/kubernetes-namespace: ${{ values.namespace }}
+  tags:
+    - keycloak
+    - identity
+    - authentication
+    - authorization
+    - sso
+    - oidc
+    - saml
+    - security
+    - iam
+  links:
+    - url: https://${{ values.domain }}/admin
+      title: Keycloak Admin Console
+      icon: web
+    - url: https://${{ values.domain }}/realms/${{ values.name }}/.well-known/openid_configuration
+      title: OpenID Configuration
+      icon: api
+    {% if values.enableMonitoring %}
+    - url: http://grafana.${{ values.domain }}/d/keycloak/keycloak-dashboard
+      title: Monitoring Dashboard
+      icon: dashboard
+    {% endif %}
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: identity-management
+  dependsOn:
+    {% if values.databaseMode == "managed" %}
+    - resource:postgresql-${{ values.name }}
+    {% endif %}
+    {% if values.enableMonitoring %}
+    - component:prometheus
+    - component:grafana
+    {% endif %}
+  providesApis:
+    - keycloak-admin-api
+    - openid-connect-api
+    {% if values.enableSAML %}
+    - saml-api
+    {% endif %}
+
+---
+{% if values.databaseMode == "managed" %}
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: postgresql-${{ values.name }}
+  description: PostgreSQL database for Keycloak
+  annotations:
+    backstage.io/kubernetes-id: postgresql
+    backstage.io/kubernetes-namespace: ${{ values.namespace }}
+  tags:
+    - database
+    - postgresql
+    - keycloak
+spec:
+  type: database
+  owner: platform-team
+  system: identity-management
+{% endif %}
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: keycloak-admin-api
+  description: Keycloak Admin REST API
+  tags:
+    - rest
+    - admin
+    - keycloak
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: identity-management
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Keycloak Admin REST API
+      version: ${{ values.keycloakVersion }}
+      description: REST API for Keycloak administration
+    servers:
+      - url: https://${{ values.domain }}/admin/realms
+        description: Keycloak Admin API
+    paths:
+      /:
+        get:
+          summary: List all realms
+          responses:
+            '200':
+              description: List of realms
+      /{realm}/users:
+        get:
+          summary: List users in realm
+          parameters:
+            - name: realm
+              in: path
+              required: true
+              schema:
+                type: string
+          responses:
+            '200':
+              description: List of users
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: openid-connect-api
+  description: OpenID Connect API
+  tags:
+    - oidc
+    - oauth2
+    - authentication
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: identity-management
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: OpenID Connect API
+      version: 1.0.0
+      description: OpenID Connect endpoints
+    servers:
+      - url: https://${{ values.domain }}/realms/${{ values.name }}/protocol/openid-connect
+        description: OpenID Connect endpoints
+    paths:
+      /auth:
+        get:
+          summary: Authorization endpoint
+          responses:
+            '302':
+              description: Redirect to login
+      /token:
+        post:
+          summary: Token endpoint
+          responses:
+            '200':
+              description: Access token response
+      /userinfo:
+        get:
+          summary: User info endpoint
+          responses:
+            '200':
+              description: User information
+
+{% if values.enableSAML %}
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: saml-api
+  description: SAML 2.0 API
+  tags:
+    - saml
+    - sso
+    - authentication
+spec:
+  type: saml
+  lifecycle: production
+  owner: platform-team
+  system: identity-management
+  definition: |
+    SAML 2.0 endpoints:
+    - SSO: https://${{ values.domain }}/realms/${{ values.name }}/protocol/saml
+    - SLO: https://${{ values.domain }}/realms/${{ values.name }}/protocol/saml/logout
+    - Metadata: https://${{ values.domain }}/realms/${{ values.name }}/protocol/saml/descriptor
+{% endif %}

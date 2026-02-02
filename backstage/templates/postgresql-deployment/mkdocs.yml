@@ -1,0 +1,28 @@
+site_name: PostgreSQL Deployment Template
+site_description: >-
+  고가용성 PostgreSQL 데이터베이스 클러스터 배포 템플릿 - 마스터/슬레이브 복제,  백업, 모니터링 기능을 포함한 프로덕션 준비된
+  PostgreSQL 클러스터
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - High Availability: high-availability.md
+  - Backup & Recovery: backup-recovery.md
+  - Monitoring: monitoring.md
+  - Security: security.md
+  - Troubleshooting: troubleshooting.md
+  - Best Practices: best-practices.md
+theme:
+  name: material
+  palette:
+    primary: blue
+    accent: light-blue
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

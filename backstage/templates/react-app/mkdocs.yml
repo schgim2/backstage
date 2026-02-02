@@ -1,0 +1,28 @@
+site_name: Modern React Application Template
+site_description: >-
+  Comprehensive React application template with TypeScript, modern tooling, and
+  best practices
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration Options: configuration-options.md
+  - Build Tools: build-tools.md
+  - UI Libraries: ui-libraries.md
+  - State Management: state-management.md
+  - Testing: testing.md
+  - Deployment: deployment.md
+  - Best Practices: best-practices.md
+theme:
+  name: material
+  palette:
+    primary: cyan
+    accent: cyan
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

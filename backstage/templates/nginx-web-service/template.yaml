@@ -1,0 +1,326 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: nginx-web-service
+  title: NGINX Web Service Deployment
+  description: Deploy a scalable NGINX-based web service with SSL, load balancing, and monitoring
+  tags:
+    - nginx
+    - web-service
+    - frontend
+    - static-site
+    - reverse-proxy
+    - container
+    - kubernetes
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+        - description
+        - repoUrl
+      properties:
+        name:
+          type: string
+          title: Service Name
+          description: Unique name for your NGINX web service
+          pattern: ^[a-zA-Z][-a-zA-Z0-9]*[a-zA-Z0-9]$
+          ui:field: EntityNamePicker
+        description:
+          type: string
+          title: Description
+          description: Brief description of your web service
+          ui:options:
+            rows: 3
+        repoUrl:
+          type: string
+          title: Repository Location
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+    - title: Service Configuration
+      properties:
+        serviceType:
+          type: string
+          title: Service Type
+          description: Type of web service to deploy
+          default: "static-site"
+          enum:
+            - "static-site"
+            - "reverse-proxy"
+            - "spa-application"
+            - "multi-site"
+        nginxVersion:
+          type: string
+          title: NGINX Version
+          description: NGINX Docker image version
+          default: "1.25-alpine"
+          enum:
+            - "1.25-alpine"
+            - "1.24-alpine"
+            - "1.23-alpine"
+            - "latest"
+        replicas:
+          type: integer
+          title: Number of Replicas
+          description: Number of NGINX pod replicas
+          default: 3
+          minimum: 1
+          maximum: 10
+        port:
+          type: integer
+          title: Service Port
+          description: Port to expose the service
+          default: 80
+          minimum: 80
+          maximum: 65535
+
+    - title: SSL/TLS Configuration
+      properties:
+        enableSSL:
+          type: boolean
+          title: Enable SSL/TLS
+          description: Enable HTTPS with SSL certificates
+          default: true
+        sslProvider:
+          type: string
+          title: SSL Certificate Provider
+          description: How to obtain SSL certificates
+          default: "cert-manager"
+          enum:
+            - "cert-manager"
+            - "manual"
+            - "self-signed"
+          ui:widget: radio
+        domain:
+          type: string
+          title: Domain Name
+          description: Primary domain name for the service
+          pattern: ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$
+        additionalDomains:
+          type: array
+          title: Additional Domains
+          description: Additional domain names (aliases)
+          items:
+            type: string
+          ui:options:
+            addable: true
+            removable: true
+
+    - title: Deployment Options
+      properties:
+        deploymentType:
+          type: string
+          title: Deployment Type
+          description: Choose deployment platform
+          default: "both"
+          enum:
+            - "docker-compose"
+            - "kubernetes"
+            - "both"
+        namespace:
+          type: string
+          title: Kubernetes Namespace
+          description: Kubernetes namespace for deployment
+          default: "web-services"
+        ingressClass:
+          type: string
+          title: Ingress Class
+          description: Kubernetes ingress class
+          default: "nginx"
+        storageClass:
+          type: string
+          title: Storage Class
+          description: Storage class for persistent volumes
+          default: "standard"
+
+    - title: Performance & Caching
+      properties:
+        enableCaching:
+          type: boolean
+          title: Enable Caching
+          description: Enable NGINX caching for static assets
+          default: true
+        cacheSize:
+          type: string
+          title: Cache Size
+          description: Maximum cache size
+          default: "100m"
+          enum:
+            - "50m"
+            - "100m"
+            - "500m"
+            - "1g"
+        enableGzip:
+          type: boolean
+          title: Enable Gzip Compression
+          description: Enable gzip compression for responses
+          default: true
+        enableBrotli:
+          type: boolean
+          title: Enable Brotli Compression
+          description: Enable brotli compression (better than gzip)
+          default: false
+
+    - title: Security & Access Control
+      properties:
+        enableBasicAuth:
+          type: boolean
+          title: Enable Basic Authentication
+          description: Protect site with basic HTTP authentication
+          default: false
+        allowedIPs:
+          type: array
+          title: Allowed IP Addresses
+          description: IP addresses/ranges allowed to access the service
+          items:
+            type: string
+          ui:options:
+            addable: true
+            removable: true
+        enableRateLimit:
+          type: boolean
+          title: Enable Rate Limiting
+          description: Enable request rate limiting
+          default: true
+        rateLimitRpm:
+          type: integer
+          title: Rate Limit (requests/minute)
+          description: Maximum requests per minute per IP
+          default: 60
+          minimum: 1
+          maximum: 1000
+
+    - title: Monitoring & Logging
+      properties:
+        enableMonitoring:
+          type: boolean
+          title: Enable Monitoring
+          description: Include Prometheus monitoring setup
+          default: true
+        enableAccessLogs:
+          type: boolean
+          title: Enable Access Logs
+          description: Enable detailed access logging
+          default: true
+        logFormat:
+          type: string
+          title: Log Format
+          description: NGINX log format
+          default: "json"
+          enum:
+            - "combined"
+            - "json"
+            - "custom"
+        enableErrorPages:
+          type: boolean
+          title: Custom Error Pages
+          description: Enable custom error pages (404, 500, etc.)
+          default: true
+
+    - title: Content Source
+      properties:
+        contentSource:
+          type: string
+          title: Content Source
+          description: Where to get the web content
+          default: "git"
+          enum:
+            - "git"
+            - "s3"
+            - "configmap"
+            - "empty"
+        gitRepo:
+          type: string
+          title: Content Git Repository
+          description: Git repository containing web content
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+        contentPath:
+          type: string
+          title: Content Path
+          description: Path within the repository containing web files
+          default: "/"
+
+  steps:
+    - id: fetch-base
+      name: Fetch Base Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          serviceType: ${{ parameters.serviceType }}
+          nginxVersion: ${{ parameters.nginxVersion }}
+          replicas: ${{ parameters.replicas }}
+          port: ${{ parameters.port }}
+          enableSSL: ${{ parameters.enableSSL }}
+          sslProvider: ${{ parameters.sslProvider }}
+          domain: ${{ parameters.domain }}
+          additionalDomains: ${{ parameters.additionalDomains }}
+          deploymentType: ${{ parameters.deploymentType }}
+          namespace: ${{ parameters.namespace }}
+          ingressClass: ${{ parameters.ingressClass }}
+          storageClass: ${{ parameters.storageClass }}
+          enableCaching: ${{ parameters.enableCaching }}
+          cacheSize: ${{ parameters.cacheSize }}
+          enableGzip: ${{ parameters.enableGzip }}
+          enableBrotli: ${{ parameters.enableBrotli }}
+          enableBasicAuth: ${{ parameters.enableBasicAuth }}
+          allowedIPs: ${{ parameters.allowedIPs }}
+          enableRateLimit: ${{ parameters.enableRateLimit }}
+          rateLimitRpm: ${{ parameters.rateLimitRpm }}
+          enableMonitoring: ${{ parameters.enableMonitoring }}
+          enableAccessLogs: ${{ parameters.enableAccessLogs }}
+          logFormat: ${{ parameters.logFormat }}
+          enableErrorPages: ${{ parameters.enableErrorPages }}
+          contentSource: ${{ parameters.contentSource }}
+          gitRepo: ${{ parameters.gitRepo }}
+          contentPath: ${{ parameters.contentPath }}
+          owner: ${{ parameters.repoUrl | parseRepoUrl | pick("owner") }}
+          repo: ${{ parameters.repoUrl | parseRepoUrl | pick("repo") }}
+
+    - id: publish
+      name: Publish to Repository
+      action: publish:github
+      input:
+        allowedHosts:
+          - github.com
+          - gitlab.com
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: "Initial NGINX web service setup"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        icon: github
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: View Deployment Guide
+        url: ${{ steps.publish.output.remoteUrl }}/blob/main/README.md
+        icon: docs
+      - title: Service URL
+        url: https://${{ parameters.domain }}
+        icon: web

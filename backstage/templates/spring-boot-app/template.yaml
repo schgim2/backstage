@@ -1,0 +1,227 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: spring-boot-app
+  title: Spring Boot Application
+  description: Create a Spring Boot application with Java and Maven
+  tags:
+    - spring-boot
+    - java
+    - backend
+    - api
+    - microservice
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+        - description
+        - repoUrl
+      properties:
+        name:
+          type: string
+          title: Application Name
+          description: Name for your Spring Boot application
+          pattern: ^[a-zA-Z][-a-zA-Z0-9]*[a-zA-Z0-9]$
+          ui:field: EntityNamePicker
+        description:
+          type: string
+          title: Description
+          description: Brief description of your Spring Boot application
+          ui:options:
+            rows: 3
+        repoUrl:
+          type: string
+          title: Repository Location
+          description: Choose a location to create the Spring Boot app repository
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+    - title: Spring Boot Configuration
+      properties:
+        springBootVersion:
+          type: string
+          title: Spring Boot Version
+          description: Spring Boot version to use
+          default: "3.2.2"
+          enum:
+            - "3.2.2"
+            - "3.1.8"
+            - "2.7.18"
+        javaVersion:
+          type: string
+          title: Java Version
+          description: Java version for the application
+          default: "17"
+          enum:
+            - "17"
+            - "11"
+            - "21"
+        buildTool:
+          type: string
+          title: Build Tool
+          description: Build tool for the Spring Boot application
+          default: "maven"
+          enum:
+            - "maven"
+            - "gradle"
+        packaging:
+          type: string
+          title: Packaging
+          description: Application packaging type
+          default: "jar"
+          enum:
+            - "jar"
+            - "war"
+        language:
+          type: string
+          title: Language
+          description: Programming language
+          default: "java"
+          enum:
+            - "java"
+            - "kotlin"
+
+    - title: Dependencies
+      properties:
+        includeWeb:
+          type: boolean
+          title: Spring Web
+          description: Include Spring Web for REST APIs
+          default: true
+        includeJPA:
+          type: boolean
+          title: Spring Data JPA
+          description: Include Spring Data JPA for database access
+          default: true
+        database:
+          type: string
+          title: Database
+          description: Choose database driver
+          default: "h2"
+          enum:
+            - "h2"
+            - "postgresql"
+            - "mysql"
+            - "mongodb"
+        includeSecurity:
+          type: boolean
+          title: Spring Security
+          description: Include Spring Security
+          default: false
+        includeActuator:
+          type: boolean
+          title: Spring Actuator
+          description: Include Spring Boot Actuator for monitoring
+          default: true
+
+    - title: Development Tools
+      properties:
+        includeDevTools:
+          type: boolean
+          title: Spring Boot DevTools
+          description: Include Spring Boot DevTools for development
+          default: true
+        includeTestContainers:
+          type: boolean
+          title: TestContainers
+          description: Include TestContainers for integration testing
+          default: false
+        includeDocker:
+          type: boolean
+          title: Include Docker
+          description: Add Docker configuration
+          default: true
+        includeCI:
+          type: boolean
+          title: Include CI/CD
+          description: Add GitHub Actions workflow
+          default: true
+
+    - title: Additional Features
+      properties:
+        includeSwagger:
+          type: boolean
+          title: OpenAPI/Swagger
+          description: Include OpenAPI documentation
+          default: true
+        includeValidation:
+          type: boolean
+          title: Bean Validation
+          description: Include Bean Validation support
+          default: true
+        includeCache:
+          type: boolean
+          title: Spring Cache
+          description: Include Spring Cache abstraction
+          default: false
+
+  steps:
+    - id: fetch-base
+      name: Fetch Base Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          springBootVersion: ${{ parameters.springBootVersion }}
+          javaVersion: ${{ parameters.javaVersion }}
+          buildTool: ${{ parameters.buildTool }}
+          packaging: ${{ parameters.packaging }}
+          language: ${{ parameters.language }}
+          includeWeb: ${{ parameters.includeWeb }}
+          includeJPA: ${{ parameters.includeJPA }}
+          database: ${{ parameters.database }}
+          includeSecurity: ${{ parameters.includeSecurity }}
+          includeActuator: ${{ parameters.includeActuator }}
+          includeDevTools: ${{ parameters.includeDevTools }}
+          includeTestContainers: ${{ parameters.includeTestContainers }}
+          includeDocker: ${{ parameters.includeDocker }}
+          includeCI: ${{ parameters.includeCI }}
+          includeSwagger: ${{ parameters.includeSwagger }}
+          includeValidation: ${{ parameters.includeValidation }}
+          includeCache: ${{ parameters.includeCache }}
+          owner: ${{ parameters.repoUrl | parseRepoUrl | pick("owner") }}
+          repo: ${{ parameters.repoUrl | parseRepoUrl | pick("repo") }}
+
+    - id: publish
+      name: Publish to Repository
+      action: publish:github
+      input:
+        allowedHosts:
+          - github.com
+          - gitlab.com
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: "Initial Spring Boot app setup"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        icon: github
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: Application Health
+        url: http://localhost:8080/actuator/health
+        icon: web
+      - title: Development Guide
+        url: ${{ steps.publish.output.remoteUrl }}/blob/main/README.md
+        icon: docs

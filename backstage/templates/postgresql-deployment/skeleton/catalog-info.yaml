@@ -1,0 +1,75 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: ${{ values.repoUrl | parseRepoUrl | pick('owner') | first }}/${{ values.repoUrl | parseRepoUrl | pick('repo') | first }}
+  tags:
+    - database
+    - postgresql
+    - ha
+    - backup
+    - monitoring
+  links:
+    - url: https://grafana.example.com/d/postgresql
+      title: PostgreSQL 대시보드
+      icon: dashboard
+    - url: https://pgadmin.example.com
+      title: pgAdmin 웹 인터페이스
+      icon: web
+spec:
+  type: service
+  lifecycle: production
+  owner: ${{ values.owner }}
+  system: database-platform
+  dependsOn:
+    - resource:default/postgresql-storage
+    - resource:default/postgresql-network
+  providesApis:
+    - postgresql-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: postgresql-api
+  description: PostgreSQL Database API
+spec:
+  type: database
+  lifecycle: production
+  owner: ${{ values.owner }}
+  definition: |
+    PostgreSQL Database Connection:
+    - Host: ${{ values.name }}-master.${{ values.namespace }}.svc.cluster.local
+    - Port: 5432
+    - Database: ${{ values.databaseName }}
+    - Username: ${{ values.username }}
+    - SSL: ${{ values.enableSSL }}
+    
+    Read Replicas:
+    {% if values.enableReplication %}
+    {% for i in range(values.replicaCount) %}
+    - Host: ${{ values.name }}-replica-{{ i }}.${{ values.namespace }}.svc.cluster.local
+    {% endfor %}
+    {% endif %}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: postgresql-storage
+  description: PostgreSQL Persistent Storage
+spec:
+  type: storage
+  owner: ${{ values.owner }}
+  dependsOn: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: postgresql-network
+  description: PostgreSQL Network Configuration
+spec:
+  type: network
+  owner: ${{ values.owner }}
+  dependsOn: []

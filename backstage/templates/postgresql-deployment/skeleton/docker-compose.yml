@@ -1,0 +1,332 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Master
+  postgresql-master:
+    image: postgres:${{ values.postgresVersion }}
+    container_name: ${{ values.name }}-master
+    hostname: postgresql-master
+    environment:
+      - POSTGRES_DB=${{ values.databaseName }}
+      - POSTGRES_USER=${{ values.username }}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
+      - PGUSER=postgres
+    volumes:
+      - postgresql_master_data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./scripts/init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
+      - ./backups:/backups
+    ports:
+      - "5432:5432"
+    networks:
+      - postgresql-network
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${{ values.username }} -d ${{ values.databaseName }}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+{% if values.enableReplication %}
+  # PostgreSQL Replicas
+{% for i in range(values.replicaCount) %}
+  postgresql-replica-{{ i }}:
+    image: postgres:${{ values.postgresVersion }}
+    container_name: ${{ values.name }}-replica-{{ i }}
+    hostname: postgresql-replica-{{ i }}
+    environment:
+      - POSTGRES_DB=${{ values.databaseName }}
+      - POSTGRES_USER=${{ values.username }}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
+      - POSTGRES_MASTER_HOST=postgresql-master
+      - POSTGRES_MASTER_PORT=5432
+      - PGUSER=postgres
+    volumes:
+      - postgresql_replica_{{ i }}_data:/var/lib/postgresql/data
+      - ./config/postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./scripts/init-replica.sh:/docker-entrypoint-initdb.d/init-replica.sh
+    ports:
+      - "{{ 5433 + i }}:5432"
+    networks:
+      - postgresql-network
+    depends_on:
+      postgresql-master:
+        condition: service_healthy
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${{ values.username }} -d ${{ values.databaseName }}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+{% endfor %}
+{% endif %}
+
+{% if values.enablePgBouncer %}
+  # PgBouncer Connection Pooler
+  pgbouncer:
+    image: pgbouncer/pgbouncer:latest
+    container_name: ${{ values.name }}-pgbouncer
+    environment:
+      - DATABASES_HOST=postgresql-master
+      - DATABASES_PORT=5432
+      - DATABASES_USER=${{ values.username }}
+      - DATABASES_PASSWORD=${POSTGRES_PASSWORD}
+      - DATABASES_DBNAME=${{ values.databaseName }}
+      - POOL_MODE=transaction
+      - SERVER_RESET_QUERY=DISCARD ALL
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=25
+      - MIN_POOL_SIZE=5
+      - RESERVE_POOL_SIZE=5
+      - SERVER_LIFETIME=3600
+      - SERVER_IDLE_TIMEOUT=600
+      - LOG_CONNECTIONS=1
+      - LOG_DISCONNECTIONS=1
+      - LOG_POOLER_ERRORS=1
+    volumes:
+      - ./config/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./config/userlist.txt:/etc/pgbouncer/userlist.txt
+    ports:
+      - "6432:5432"
+    networks:
+      - postgresql-network
+    depends_on:
+      postgresql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h localhost -U ${{ values.username }} -d pgbouncer -c 'SHOW POOLS;' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enableMonitoring %}
+  # PostgreSQL Exporter for Prometheus
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: ${{ values.name }}-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${{ values.username }}:${POSTGRES_PASSWORD}@postgresql-master:5432/${{ values.databaseName }}?sslmode=disable
+      - PG_EXPORTER_EXTEND_QUERY_PATH=/etc/postgres_exporter/queries.yaml
+    volumes:
+      - ./monitoring/queries.yaml:/etc/postgres_exporter/queries.yaml
+    ports:
+      - "9187:9187"
+    networks:
+      - postgresql-network
+    depends_on:
+      postgresql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9187/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ${{ values.name }}-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - postgresql-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Prometheus for Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${{ values.name }}-prometheus
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - postgresql-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enablePgAdmin %}
+  # pgAdmin Web Interface
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ${{ values.name }}-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@${{ values.name }}.local
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json
+    ports:
+      - "8080:80"
+    networks:
+      - postgresql-network
+    depends_on:
+      postgresql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/misc/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enableBackup %}
+  # Backup Service
+  backup:
+    image: postgres:${{ values.postgresVersion }}
+    container_name: ${{ values.name }}-backup
+    environment:
+      - POSTGRES_HOST=postgresql-master
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${{ values.databaseName }}
+      - POSTGRES_USER=${{ values.username }}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BACKUP_SCHEDULE=${{ values.backupSchedule }}
+      - BACKUP_RETENTION=${{ values.backupRetention }}
+      - BACKUP_STORAGE=${{ values.backupStorage }}
+{% if values.backupStorage == 's3' %}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+{% elif values.backupStorage == 'gcs' %}
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/service-account.json
+      - GCS_BUCKET=${GCS_BUCKET}
+{% endif %}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh
+      - ./scripts/restore.sh:/usr/local/bin/restore.sh
+{% if values.backupStorage == 'gcs' %}
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/credentials/service-account.json
+{% endif %}
+    networks:
+      - postgresql-network
+    depends_on:
+      postgresql-master:
+        condition: service_healthy
+    command: >
+      sh -c "
+        chmod +x /usr/local/bin/backup.sh /usr/local/bin/restore.sh &&
+        echo '${{ values.backupSchedule }} /usr/local/bin/backup.sh' | crontab - &&
+        crond -f
+      "
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+volumes:
+  postgresql_master_data:
+    driver: local
+{% if values.enableReplication %}
+{% for i in range(values.replicaCount) %}
+  postgresql_replica_{{ i }}_data:
+    driver: local
+{% endfor %}
+{% endif %}
+{% if values.enableMonitoring %}
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+{% endif %}
+{% if values.enablePgAdmin %}
+  pgadmin_data:
+    driver: local
+{% endif %}
+
+networks:
+  postgresql-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

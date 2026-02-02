@@ -1,0 +1,52 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+import { useAuth0 } from '@auth0/auth0-react'
+{% if values.uiLibrary == "material-ui" %}import { Button } from '@mui/material'
+{% elif values.uiLibrary == "chakra-ui" %}import { Button } from '@chakra-ui/react'
+{% elif values.uiLibrary == "ant-design" %}import { Button } from 'antd'
+{% endif %}
+
+{% if values.useTypeScript %}const LogoutButton: React.FC = () => {{% else %}const LogoutButton = () => {{% endif %}
+  const { logout } = useAuth0()
+
+  return (
+{% if values.uiLibrary == "material-ui" %}
+    <Button
+      variant="outlined"
+      color="secondary"
+      onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+    >
+      Log Out
+    </Button>
+{% elif values.uiLibrary == "chakra-ui" %}
+    <Button
+      variant="outline"
+      colorScheme="red"
+      onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+    >
+      Log Out
+    </Button>
+{% elif values.uiLibrary == "ant-design" %}
+    <Button
+      danger
+      onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+    >
+      Log Out
+    </Button>
+{% elif values.uiLibrary == "tailwind" %}
+    <button
+      onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+      className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+    >
+      Log Out
+    </button>
+{% else %}
+    <button onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>
+      Log Out
+    </button>
+{% endif %}
+  )
+}
+
+export default LogoutButton

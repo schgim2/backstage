@@ -1,0 +1,438 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: mysql-deployment
+  title: MySQL Database Deployment
+  description: 고가용성 MySQL 데이터베이스 클러스터 배포 템플릿 - 마스터/슬레이브 복제, 백업, 모니터링 포함
+  tags:
+    - database
+    - mysql
+    - ha
+    - backup
+    - monitoring
+    - docker
+    - kubernetes
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  type: service
+  
+  parameters:
+    - title: 기본 정보
+      required:
+        - name
+        - description
+        - owner
+      properties:
+        name:
+          title: 데이터베이스 클러스터 이름
+          type: string
+          pattern: '^[a-z0-9-]+$'
+          description: MySQL 클러스터의 고유 식별자 (소문자, 숫자, 하이픈만 허용)
+          default: my-mysql-cluster
+        description:
+          title: 설명
+          type: string
+          description: MySQL 클러스터에 대한 간단한 설명
+          default: High-availability MySQL database cluster
+        owner:
+          title: 소유자
+          type: string
+          description: 이 데이터베이스 클러스터를 관리할 팀 또는 개인
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+
+    - title: MySQL 설정
+      properties:
+        mysqlVersion:
+          title: MySQL 버전
+          type: string
+          description: 사용할 MySQL 버전
+          default: '8.0'
+          enum:
+            - '8.0'
+            - '5.7'
+            - '8.4'
+          enumNames:
+            - 'MySQL 8.0 (권장)'
+            - 'MySQL 5.7 (레거시 지원)'
+            - 'MySQL 8.4 (최신 LTS)'
+        
+        databaseName:
+          title: 기본 데이터베이스 이름
+          type: string
+          description: 생성할 기본 데이터베이스 이름
+          default: myapp
+          pattern: '^[a-zA-Z][a-zA-Z0-9_]*$'
+        
+        username:
+          title: 데이터베이스 사용자명
+          type: string
+          description: 애플리케이션에서 사용할 데이터베이스 사용자명
+          default: appuser
+          pattern: '^[a-zA-Z][a-zA-Z0-9_]*$'
+        
+        enableSSL:
+          title: SSL/TLS 활성화
+          type: boolean
+          description: 데이터베이스 연결에 SSL/TLS 암호화 사용
+          default: true
+        
+        charset:
+          title: 문자 집합
+          type: string
+          description: 기본 문자 집합
+          default: utf8mb4
+          enum:
+            - utf8mb4
+            - utf8
+            - latin1
+          enumNames:
+            - 'UTF8MB4 (권장 - 이모지 지원)'
+            - 'UTF8 (표준)'
+            - 'Latin1 (레거시)'
+        
+        collation:
+          title: 콜레이션
+          type: string
+          description: 기본 콜레이션
+          default: utf8mb4_unicode_ci
+          enum:
+            - utf8mb4_unicode_ci
+            - utf8mb4_general_ci
+            - utf8_unicode_ci
+            - utf8_general_ci
+          enumNames:
+            - 'UTF8MB4 Unicode CI (권장)'
+            - 'UTF8MB4 General CI'
+            - 'UTF8 Unicode CI'
+            - 'UTF8 General CI'
+
+    - title: 고가용성 설정
+      properties:
+        enableReplication:
+          title: 복제 활성화
+          type: boolean
+          description: 마스터/슬레이브 복제 구성 활성화
+          default: true
+        
+        replicaCount:
+          title: 복제본 수
+          type: integer
+          description: 생성할 읽기 전용 복제본의 수
+          default: 2
+          minimum: 1
+          maximum: 5
+          ui:widget: updown
+        
+        replicationMode:
+          title: 복제 모드
+          type: string
+          description: MySQL 복제 모드 선택
+          default: async
+          enum:
+            - async
+            - semi-sync
+            - group-replication
+          enumNames:
+            - '비동기 복제 (성능 우선)'
+            - '반동기 복제 (균형)'
+            - '그룹 복제 (일관성 우선)'
+        
+        enableProxySQL:
+          title: ProxySQL 로드 밸런서
+          type: boolean
+          description: ProxySQL을 사용한 로드 밸런싱 활성화
+          default: true
+        
+        maxConnections:
+          title: 최대 연결 수
+          type: integer
+          description: MySQL 서버의 최대 동시 연결 수
+          default: 200
+          minimum: 50
+          maximum: 1000
+
+    - title: 백업 설정
+      properties:
+        enableBackup:
+          title: 자동 백업 활성화
+          type: boolean
+          description: 정기적인 자동 백업 활성화
+          default: true
+        
+        backupSchedule:
+          title: 백업 스케줄
+          type: string
+          description: Cron 형식의 백업 스케줄
+          default: "0 2 * * *"
+          ui:help: "매일 오전 2시에 백업 실행 (Cron 형식)"
+        
+        backupRetention:
+          title: 백업 보존 기간
+          type: integer
+          description: 백업 파일을 보존할 일수
+          default: 30
+          minimum: 7
+          maximum: 365
+        
+        backupStorage:
+          title: 백업 저장소
+          type: string
+          description: 백업 파일을 저장할 위치
+          default: local
+          enum:
+            - local
+            - s3
+            - gcs
+            - azure
+          enumNames:
+            - '로컬 스토리지'
+            - 'Amazon S3'
+            - 'Google Cloud Storage'
+            - 'Azure Blob Storage'
+        
+        enableBinlogBackup:
+          title: 바이너리 로그 백업
+          type: boolean
+          description: 바이너리 로그 백업 활성화 (PITR 지원)
+          default: true
+
+    - title: 모니터링 설정
+      properties:
+        enableMonitoring:
+          title: 모니터링 활성화
+          type: boolean
+          description: Prometheus 메트릭 및 Grafana 대시보드 활성화
+          default: true
+        
+        enablePhpMyAdmin:
+          title: phpMyAdmin 웹 인터페이스
+          type: boolean
+          description: phpMyAdmin 웹 관리 인터페이스 배포
+          default: true
+        
+        enableSlowQueryLog:
+          title: 슬로우 쿼리 로그
+          type: boolean
+          description: 느린 쿼리 로깅 활성화
+          default: true
+        
+        slowQueryTime:
+          title: 슬로우 쿼리 임계값
+          type: number
+          description: 슬로우 쿼리로 기록할 최소 실행 시간 (초)
+          default: 2.0
+          minimum: 0.1
+          maximum: 60.0
+
+    - title: 리소스 설정
+      properties:
+        masterResources:
+          title: 마스터 노드 리소스
+          type: object
+          description: 마스터 MySQL 노드의 리소스 할당
+          properties:
+            cpu:
+              title: CPU
+              type: string
+              default: "2"
+              enum: ["1", "2", "4", "8"]
+              enumNames: ["1 Core", "2 Cores", "4 Cores", "8 Cores"]
+            memory:
+              title: 메모리
+              type: string
+              default: "4Gi"
+              enum: ["2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]
+              enumNames: ["2GB", "4GB", "8GB", "16GB", "32GB"]
+            storage:
+              title: 스토리지
+              type: string
+              default: "100Gi"
+              enum: ["50Gi", "100Gi", "200Gi", "500Gi", "1Ti"]
+              enumNames: ["50GB", "100GB", "200GB", "500GB", "1TB"]
+        
+        replicaResources:
+          title: 복제본 노드 리소스
+          type: object
+          description: 복제본 MySQL 노드의 리소스 할당
+          properties:
+            cpu:
+              title: CPU
+              type: string
+              default: "1"
+              enum: ["1", "2", "4", "8"]
+              enumNames: ["1 Core", "2 Cores", "4 Cores", "8 Cores"]
+            memory:
+              title: 메모리
+              type: string
+              default: "2Gi"
+              enum: ["2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]
+              enumNames: ["2GB", "4GB", "8GB", "16GB", "32GB"]
+            storage:
+              title: 스토리지
+              type: string
+              default: "100Gi"
+              enum: ["50Gi", "100Gi", "200Gi", "500Gi", "1Ti"]
+              enumNames: ["50GB", "100GB", "200GB", "500GB", "1TB"]
+
+    - title: 배포 환경
+      properties:
+        deploymentType:
+          title: 배포 방식
+          type: string
+          description: MySQL 클러스터 배포 방식 선택
+          default: kubernetes
+          enum:
+            - docker-compose
+            - kubernetes
+            - helm
+          enumNames:
+            - 'Docker Compose (개발/테스트)'
+            - 'Kubernetes (프로덕션)'
+            - 'Helm Chart (고급 설정)'
+        
+        namespace:
+          title: Kubernetes 네임스페이스
+          type: string
+          description: 배포할 Kubernetes 네임스페이스
+          default: database
+          pattern: '^[a-z0-9-]+$'
+          ui:field: EntityNamePicker
+          ui:options:
+            allowedKinds:
+              - Namespace
+        
+        storageClass:
+          title: 스토리지 클래스
+          type: string
+          description: 사용할 Kubernetes 스토리지 클래스
+          default: fast-ssd
+          enum:
+            - standard
+            - fast-ssd
+            - premium-ssd
+            - local-storage
+          enumNames:
+            - 'Standard (기본)'
+            - 'Fast SSD (권장)'
+            - 'Premium SSD (고성능)'
+            - 'Local Storage (최고 성능)'
+
+    - title: 보안 설정
+      properties:
+        enableNetworkPolicies:
+          title: 네트워크 정책
+          type: boolean
+          description: Kubernetes 네트워크 정책으로 트래픽 제한
+          default: true
+        
+        enablePodSecurityPolicy:
+          title: Pod 보안 정책
+          type: boolean
+          description: Pod 보안 정책 적용
+          default: true
+        
+        enableTLS:
+          title: 내부 TLS
+          type: boolean
+          description: 클러스터 내부 통신에 TLS 사용
+          default: true
+        
+        passwordComplexity:
+          title: 비밀번호 복잡성
+          type: string
+          description: 데이터베이스 비밀번호 복잡성 요구사항
+          default: strong
+          enum:
+            - simple
+            - medium
+            - strong
+          enumNames:
+            - '단순 (8자 이상)'
+            - '보통 (영문+숫자, 12자 이상)'
+            - '강력 (영문+숫자+특수문자, 16자 이상)'
+
+    - title: 저장소 설정
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: 저장소 위치
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+  steps:
+    - id: fetch
+      name: 템플릿 파일 가져오기
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          mysqlVersion: ${{ parameters.mysqlVersion }}
+          databaseName: ${{ parameters.databaseName }}
+          username: ${{ parameters.username }}
+          enableSSL: ${{ parameters.enableSSL }}
+          charset: ${{ parameters.charset }}
+          collation: ${{ parameters.collation }}
+          enableReplication: ${{ parameters.enableReplication }}
+          replicaCount: ${{ parameters.replicaCount }}
+          replicationMode: ${{ parameters.replicationMode }}
+          enableProxySQL: ${{ parameters.enableProxySQL }}
+          maxConnections: ${{ parameters.maxConnections }}
+          enableBackup: ${{ parameters.enableBackup }}
+          backupSchedule: ${{ parameters.backupSchedule }}
+          backupRetention: ${{ parameters.backupRetention }}
+          backupStorage: ${{ parameters.backupStorage }}
+          enableBinlogBackup: ${{ parameters.enableBinlogBackup }}
+          enableMonitoring: ${{ parameters.enableMonitoring }}
+          enablePhpMyAdmin: ${{ parameters.enablePhpMyAdmin }}
+          enableSlowQueryLog: ${{ parameters.enableSlowQueryLog }}
+          slowQueryTime: ${{ parameters.slowQueryTime }}
+          masterResources: ${{ parameters.masterResources }}
+          replicaResources: ${{ parameters.replicaResources }}
+          deploymentType: ${{ parameters.deploymentType }}
+          namespace: ${{ parameters.namespace }}
+          storageClass: ${{ parameters.storageClass }}
+          enableNetworkPolicies: ${{ parameters.enableNetworkPolicies }}
+          enablePodSecurityPolicy: ${{ parameters.enablePodSecurityPolicy }}
+          enableTLS: ${{ parameters.enableTLS }}
+          passwordComplexity: ${{ parameters.passwordComplexity }}
+          repoUrl: ${{ parameters.repoUrl }}
+
+    - id: publish
+      name: 저장소에 게시
+      action: publish:github
+      input:
+        allowedHosts: ['github.com']
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: 'Initial MySQL deployment configuration'
+        gitAuthorName: 'Backstage'
+        gitAuthorEmail: 'backstage@example.com'
+
+    - id: register
+      name: 카탈로그에 등록
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: '/catalog-info.yaml'
+
+  output:
+    links:
+      - title: 저장소 열기
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: 카탈로그에서 보기
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

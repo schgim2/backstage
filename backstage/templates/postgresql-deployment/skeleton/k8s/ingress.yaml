@@ -1,0 +1,116 @@
+{% if values.enablePgAdmin %}
+# Ingress for pgAdmin web interface
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${{ values.name }}-pgadmin
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {% if values.enableTLS %}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {% endif %}
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: ${{ values.name }}-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - PostgreSQL Admin'
+spec:
+  ingressClassName: nginx
+  {% if values.enableTLS %}
+  tls:
+  - hosts:
+    - pgadmin-${{ values.name }}.${{ values.namespace }}.example.com
+    secretName: ${{ values.name }}-pgadmin-tls
+  {% endif %}
+  rules:
+  - host: pgadmin-${{ values.name }}.${{ values.namespace }}.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${{ values.name }}-pgadmin
+            port:
+              number: 80
+
+---
+# Basic auth secret for pgAdmin access
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${{ values.name }}-basic-auth
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+type: Opaque
+data:
+  # Default: admin / admin123 (change in production)
+  auth: YWRtaW46JGFwcjEkSDY1dnVhNzAkLjFOQS5OMGJOTzJjLkJBU1E4dVBhLw==
+{% endif %}
+
+{% if values.enableMonitoring %}
+---
+# Ingress for Prometheus metrics (optional, for external monitoring)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${{ values.name }}-metrics
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /metrics
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {% if values.enableTLS %}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {% endif %}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: ${{ values.name }}-metrics-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - PostgreSQL Metrics'
+spec:
+  ingressClassName: nginx
+  {% if values.enableTLS %}
+  tls:
+  - hosts:
+    - metrics-${{ values.name }}.${{ values.namespace }}.example.com
+    secretName: ${{ values.name }}-metrics-tls
+  {% endif %}
+  rules:
+  - host: metrics-${{ values.name }}.${{ values.namespace }}.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${{ values.name }}-master
+            port:
+              number: 9187
+
+---
+# Basic auth secret for metrics access
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${{ values.name }}-metrics-auth
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: monitoring
+type: Opaque
+data:
+  # Default: prometheus / metrics123 (change in production)
+  auth: cHJvbWV0aGV1czokYXByMSRIRzY1dnVhNzAkLjFOQS5OMGJOTzJjLkJBU1E4dVBhLw==
+{% endif %}

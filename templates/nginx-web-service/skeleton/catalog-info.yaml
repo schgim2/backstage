@@ -1,0 +1,51 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    github.com/project-slug: ${{ values.owner }}/${{ values.repo }}
+    backstage.io/techdocs-ref: dir:.
+    {% if values.domain %}
+    nginx.io/domain: ${{ values.domain }}
+    {% endif %}
+    {% if values.enableSSL %}
+    nginx.io/ssl-enabled: "true"
+    {% endif %}
+  tags:
+    - nginx
+    - web-service
+    - frontend
+    {% if values.serviceType == "static-site" %}
+    - static-site
+    {% elif values.serviceType == "reverse-proxy" %}
+    - reverse-proxy
+    {% elif values.serviceType == "spa-application" %}
+    - spa
+    - single-page-app
+    {% elif values.serviceType == "multi-site" %}
+    - multi-site
+    {% endif %}
+    {% if values.enableSSL %}
+    - https
+    {% endif %}
+    {% if values.enableMonitoring %}
+    - monitoring
+    {% endif %}
+spec:
+  type: website
+  lifecycle: production
+  owner: platform-team
+  system: web-infrastructure
+  {% if values.domain %}
+  providesApis:
+    - ${{ values.name }}-api
+  {% endif %}
+  dependsOn:
+    {% if values.enableSSL and values.sslProvider == "cert-manager" %}
+    - resource:cert-manager
+    {% endif %}
+    {% if values.enableMonitoring %}
+    - resource:prometheus
+    {% endif %}
+    - resource:nginx-ingress

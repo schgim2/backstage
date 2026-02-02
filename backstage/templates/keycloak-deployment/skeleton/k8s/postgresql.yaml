@@ -1,0 +1,187 @@
+{% if values.databaseMode == "managed" and values.databaseType == "postgresql" %}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/version: "15"
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgresql-headless
+  {% if values.enableDatabaseHA %}
+  replicas: 3
+  {% else %}
+  replicas: 1
+  {% endif %}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/instance: ${{ values.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/instance: ${{ values.name }}
+        app.kubernetes.io/version: "15"
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: postgresql
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      initContainers:
+      - name: init-db
+        image: postgres:15-alpine
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+            echo "Initializing database..."
+            initdb -D /var/lib/postgresql/data --auth-host=md5 --auth-local=trust
+            echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          fi
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: password
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: database
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+      containers:
+      - name: postgresql
+        image: postgres:15-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: password
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-creds
+              key: database
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        {% if values.enableDatabaseHA %}
+        - name: POSTGRES_REPLICATION_USER
+          value: replicator
+        - name: POSTGRES_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-replication
+              key: password
+        {% endif %}
+        ports:
+        - name: postgresql
+          containerPort: 5432
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgresql-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+          readOnly: true
+        - name: postgresql-config
+          mountPath: /etc/postgresql/pg_hba.conf
+          subPath: pg_hba.conf
+          readOnly: true
+      volumes:
+      - name: postgresql-config
+        configMap:
+          name: postgresql-config
+  volumeClaimTemplates:
+  - metadata:
+      name: postgresql-data
+      labels:
+        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/instance: ${{ values.name }}
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: ${{ values.storageClass }}
+      resources:
+        requests:
+          storage: ${{ values.databaseSize }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgresql
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+
+---
+{% if values.enableDatabaseHA %}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-replication
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+type: Opaque
+stringData:
+  password: "CHANGE_ME_REPLICATION_PASSWORD"
+{% endif %}
+{% endif %}

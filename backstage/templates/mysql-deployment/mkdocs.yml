@@ -1,0 +1,36 @@
+site_name: MySQL 클러스터 배포 가이드
+site_description: ${{ values.name }} MySQL 고가용성 클러스터 배포 및 운영 가이드
+site_author: ${{ values.owner }}
+nav:
+  - 개요: index.md
+  - 시작하기: getting-started.md
+  - 설정 옵션: configuration.md
+  - 고가용성: high-availability.md
+  - 백업 및 복구: backup-recovery.md
+  - 모니터링: monitoring.md
+  - 보안: security.md
+  - 문제 해결: troubleshooting.md
+  - 모범 사례: best-practices.md
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - toc:
+      permalink: true

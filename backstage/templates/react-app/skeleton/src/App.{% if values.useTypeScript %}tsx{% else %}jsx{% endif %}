@@ -1,0 +1,60 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+{% if values.includeRouter %}import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import Home from './pages/Home{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+import About from './pages/About{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+import Navigation from './components/Navigation{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+{% else %}import Home from './components/Home{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+{% endif %}
+{% if values.includeAuth and values.authProvider == "auth0" %}import { useAuth0 } from '@auth0/auth0-react'
+import LoginButton from './components/LoginButton{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+import LogoutButton from './components/LogoutButton{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+{% endif %}
+import './styles/App.css'
+
+{% if values.useTypeScript %}function App(): JSX.Element {{% else %}function App() {{% endif %}
+{% if values.includeAuth and values.authProvider == "auth0" %}
+  const { isLoading, error, isAuthenticated } = useAuth0()
+
+  if (error) {
+    return <div>Oops... {error.message}</div>
+  }
+
+  if (isLoading) {
+    return <div>Loading...</div>
+  }
+{% endif %}
+
+  return (
+{% if values.includeRouter %}
+    <Router>
+      <div className="App">
+{% if values.includeAuth and values.authProvider == "auth0" %}
+        <header className="App-header">
+          {isAuthenticated ? <LogoutButton /> : <LoginButton />}
+        </header>
+{% endif %}
+        <Navigation />
+        <main>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+{% else %}
+    <div className="App">
+{% if values.includeAuth and values.authProvider == "auth0" %}
+      <header className="App-header">
+        {isAuthenticated ? <LogoutButton /> : <LoginButton />}
+      </header>
+{% endif %}
+      <Home />
+    </div>
+{% endif %}
+  )
+}
+
+export default App

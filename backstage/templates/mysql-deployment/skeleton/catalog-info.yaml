@@ -1,0 +1,53 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: ${{ values.repoUrl | parseRepoUrl | pick('owner') }}/${{ values.repoUrl | parseRepoUrl | pick('repo') }}
+  tags:
+    - mysql
+    - database
+    - high-availability
+    {% if values.enableReplication %}
+    - replication
+    {% endif %}
+    {% if values.enableBackup %}
+    - backup
+    {% endif %}
+    {% if values.enableMonitoring %}
+    - monitoring
+    {% endif %}
+  links:
+    - url: ${{ values.repoUrl }}
+      title: Source Code
+      icon: github
+    {% if values.enablePhpMyAdmin %}
+    - url: http://phpmyadmin-${{ values.name }}.${{ values.namespace }}.svc.cluster.local
+      title: phpMyAdmin
+      icon: web
+    {% endif %}
+    {% if values.enableMonitoring %}
+    - url: http://grafana.${{ values.namespace }}.svc.cluster.local
+      title: Grafana Dashboard
+      icon: dashboard
+    {% endif %}
+spec:
+  type: service
+  lifecycle: production
+  owner: ${{ values.owner }}
+  system: database-platform
+  dependsOn:
+    {% if values.deploymentType == 'kubernetes' %}
+    - resource:default/kubernetes-cluster
+    {% endif %}
+    {% if values.backupStorage == 's3' %}
+    - resource:default/s3-storage
+    {% elif values.backupStorage == 'gcs' %}
+    - resource:default/gcs-storage
+    {% elif values.backupStorage == 'azure' %}
+    - resource:default/azure-storage
+    {% endif %}
+  providesApis:
+    - mysql-database-api

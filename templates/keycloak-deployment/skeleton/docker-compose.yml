@@ -1,0 +1,248 @@
+version: '3.8'
+
+services:
+  # Database Service (PostgreSQL by default, MySQL if configured)
+{% if values.databaseType == "postgresql" %}
+  postgresql:
+    image: postgres:15-alpine
+    container_name: ${{ values.name }}-postgresql
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-keycloak}
+      - POSTGRES_USER=${POSTGRES_USER:-keycloak}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-keycloak}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+{% elif values.databaseType == "mysql" %}
+  mysql:
+    image: mysql:8.0
+    container_name: ${{ values.name }}-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-keycloak}
+      - MYSQL_USER=${MYSQL_USER:-keycloak}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./config/mysql.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    ports:
+      - "3306:3306"
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+{% endif %}
+
+  # Keycloak Service
+  keycloak:
+    image: quay.io/keycloak/keycloak:${{ values.keycloakVersion }}
+    container_name: ${{ values.name }}-keycloak
+    command: start{% if values.deploymentMode == "development" %} --dev{% endif %}
+    environment:
+      # Admin Configuration
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-${{ values.adminUser }}}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      
+      # Database Configuration
+{% if values.databaseType == "postgresql" %}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgresql:5432/${POSTGRES_DB:-keycloak}
+      - KC_DB_USERNAME=${POSTGRES_USER:-keycloak}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD}
+{% elif values.databaseType == "mysql" %}
+      - KC_DB=mysql
+      - KC_DB_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-keycloak}
+      - KC_DB_USERNAME=${MYSQL_USER:-keycloak}
+      - KC_DB_PASSWORD=${MYSQL_PASSWORD}
+{% endif %}
+      
+      # Hostname Configuration
+{% if values.domain %}
+      - KC_HOSTNAME=${{ values.domain }}
+{% else %}
+      - KC_HOSTNAME=localhost
+{% endif %}
+{% if values.enableSSL %}
+      - KC_HOSTNAME_STRICT_HTTPS=true
+{% else %}
+      - KC_HOSTNAME_STRICT_HTTPS=false
+{% endif %}
+      
+      # Proxy Configuration
+      - KC_PROXY=edge
+      
+      # Logging Configuration
+      - KC_LOG_LEVEL=${{ values.logLevel }}
+{% if values.enableAuditLogs %}
+      - KC_LOG_CONSOLE_OUTPUT=json
+{% endif %}
+      
+      # Metrics Configuration
+{% if values.enableMetrics %}
+      - KC_METRICS_ENABLED=true
+{% endif %}
+      
+      # Health Configuration
+      - KC_HEALTH_ENABLED=true
+      
+      # Cache Configuration
+{% if values.replicas > 1 %}
+      - KC_CACHE=ispn
+      - KC_CACHE_STACK=kubernetes
+{% endif %}
+      
+      # Feature Configuration
+{% if values.enableAdminAPI %}
+      - KC_FEATURES=admin-api
+{% endif %}
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+{% if values.enableMetrics %}
+      - "9990:9990"
+{% endif %}
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+{% if values.enableThemes %}
+      - ./themes:/opt/keycloak/themes:ro
+{% endif %}
+{% if values.enableSSL and values.sslProvider == "manual" %}
+      - ./certs:/opt/keycloak/conf/certs:ro
+{% endif %}
+      - ./config/keycloak.conf:/opt/keycloak/conf/keycloak.conf:ro
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+{% if values.databaseType == "postgresql" %}
+      postgresql:
+        condition: service_healthy
+{% elif values.databaseType == "mysql" %}
+      mysql:
+        condition: service_healthy
+{% endif %}
+
+{% if values.enableMonitoring %}
+  # Prometheus for Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${{ values.name }}-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ${{ values.name }}-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+{% endif %}
+
+{% if values.enableSSL and values.sslProvider == "cert-manager" %}
+  # Reverse Proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: ${{ values.name }}-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+{% endif %}
+
+{% if values.databaseBackup %}
+  # Database Backup Service
+  db-backup:
+    image: postgres:15-alpine
+    container_name: ${{ values.name }}-backup
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    command: |
+      sh -c "
+        echo '0 2 * * * /backup.sh' | crontab -
+        crond -f
+      "
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    depends_on:
+{% if values.databaseType == "postgresql" %}
+      - postgresql
+{% elif values.databaseType == "mysql" %}
+      - mysql
+{% endif %}
+{% endif %}
+
+volumes:
+{% if values.databaseType == "postgresql" %}
+  postgresql-data:
+    driver: local
+{% elif values.databaseType == "mysql" %}
+  mysql-data:
+    driver: local
+{% endif %}
+  keycloak-data:
+    driver: local
+{% if values.enableMonitoring %}
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+{% endif %}
+
+networks:
+  keycloak-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16

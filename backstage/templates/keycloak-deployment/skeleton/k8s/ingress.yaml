@@ -1,0 +1,275 @@
+{% if values.domain %}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: identity-provider
+  annotations:
+    kubernetes.io/ingress.class: ${{ values.ingressClass }}
+    {% if values.enableSSL and values.sslProvider == "cert-manager" %}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {% endif %}
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/client-max-body-size: "10m"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header Host $host;
+    {% if values.enableSSL %}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {% endif %}
+spec:
+  {% if values.enableSSL %}
+  tls:
+  - hosts:
+    - ${{ values.domain }}
+    {% if values.sslProvider == "cert-manager" %}
+    secretName: keycloak-tls
+    {% elif values.sslProvider == "manual" %}
+    secretName: keycloak-tls-manual
+    {% elif values.sslProvider == "self-signed" %}
+    secretName: keycloak-tls-self-signed
+    {% endif %}
+  {% endif %}
+  rules:
+  - host: ${{ values.domain }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+
+---
+{% if values.enableSSL and values.sslProvider == "cert-manager" %}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  secretName: keycloak-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - ${{ values.domain }}
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@${{ values.domain }}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: ${{ values.ingressClass }}
+{% elif values.enableSSL and values.sslProvider == "self-signed" %}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls-self-signed
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  secretName: keycloak-tls-self-signed
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+  dnsNames:
+  - ${{ values.domain }}
+  - localhost
+
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  selfSigned: {}
+{% endif %}
+{% endif %}
+
+---
+{% if values.enableNetworkPolicies %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/instance: ${{ values.name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow ingress from monitoring namespace
+  {% if values.enableMonitoring %}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9990
+  {% endif %}
+  # Allow inter-pod communication for clustering
+  {% if values.replicas > 1 %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: keycloak
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 7600
+  {% endif %}
+  egress:
+  # Allow egress to database
+  {% if values.databaseMode == "managed" %}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  # Allow egress to DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow egress to external identity providers
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  # Allow egress to Vault (if enabled)
+  {% if values.enableVault %}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 8200
+  {% endif %}
+
+---
+{% if values.databaseMode == "managed" %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/instance: ${{ values.name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from Keycloak pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: keycloak
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow ingress from backup pods
+  {% if values.databaseBackup %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql-backup
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  # Allow inter-database communication for HA
+  {% if values.enableDatabaseHA %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  egress:
+  # Allow egress to DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow inter-database communication for HA
+  {% if values.enableDatabaseHA %}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: ${{ values.name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+{% endif %}
+{% endif %}

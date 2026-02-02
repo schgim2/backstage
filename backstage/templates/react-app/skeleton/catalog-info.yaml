@@ -1,0 +1,36 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    github.com/project-slug: ${{ values.owner }}/${{ values.repo }}
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - react
+    - frontend
+    - web
+{% if values.useTypeScript %}
+    - typescript
+{% endif %}
+{% if values.buildTool == "vite" %}
+    - vite
+{% elif values.buildTool == "webpack" %}
+    - webpack
+{% else %}
+    - create-react-app
+{% endif %}
+{% if values.uiLibrary != "none" %}
+    - {{ values.uiLibrary }}
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+    - {{ values.includeStateManagement }}
+{% endif %}
+spec:
+  type: website
+  lifecycle: experimental
+  owner: ${{ values.owner }}
+  system: frontend-platform
+  providesApis: []
+  consumesApis: []
+  dependsOn: []

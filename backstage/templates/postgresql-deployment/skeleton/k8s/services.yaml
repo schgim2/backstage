@@ -1,0 +1,388 @@
+# Main PostgreSQL service (master for read/write)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    app.kubernetes.io/instance: main
+  {% if values.enableMonitoring %}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9187"
+    prometheus.io/path: "/metrics"
+  {% endif %}
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+  {% if values.enableMonitoring %}
+  - name: metrics
+    port: 9187
+    targetPort: 9187
+    protocol: TCP
+  {% endif %}
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/instance: master
+
+{% if values.enablePgBouncer %}
+---
+# PgBouncer connection pooling service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}-pgbouncer
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: connection-pool
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: connection-pool
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}
+        app.kubernetes.io/component: connection-pool
+        app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    spec:
+      {% if values.enablePodSecurityPolicy %}
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        runAsNonRoot: true
+      {% endif %}
+      containers:
+      - name: pgbouncer
+        image: pgbouncer/pgbouncer:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: pgbouncer
+          containerPort: 5432
+          protocol: TCP
+        env:
+        - name: DATABASES_HOST
+          value: ${{ values.name }}-master.${{ values.namespace }}.svc.cluster.local
+        - name: DATABASES_PORT
+          value: "5432"
+        - name: DATABASES_USER
+          value: ${{ values.username }}
+        - name: DATABASES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: postgres-password
+        - name: DATABASES_DBNAME
+          value: ${{ values.databaseName }}
+        - name: POOL_MODE
+          value: transaction
+        - name: SERVER_RESET_QUERY
+          value: DISCARD ALL
+        - name: MAX_CLIENT_CONN
+          value: "{{ values.maxConnections }}"
+        - name: DEFAULT_POOL_SIZE
+          value: "25"
+        - name: MIN_POOL_SIZE
+          value: "5"
+        - name: RESERVE_POOL_SIZE
+          value: "5"
+        - name: SERVER_LIFETIME
+          value: "3600"
+        - name: SERVER_IDLE_TIMEOUT
+          value: "600"
+        - name: LOG_CONNECTIONS
+          value: "1"
+        - name: LOG_DISCONNECTIONS
+          value: "1"
+        - name: LOG_POOLER_ERRORS
+          value: "1"
+        volumeMounts:
+        - name: pgbouncer-config
+          mountPath: /etc/pgbouncer
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        {% if values.enablePodSecurityPolicy %}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 999
+          capabilities:
+            drop:
+            - ALL
+        {% endif %}
+      volumes:
+      - name: pgbouncer-config
+        configMap:
+          name: ${{ values.name }}-pgbouncer-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-pgbouncer
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: connection-pool
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  type: ClusterIP
+  ports:
+  - name: pgbouncer
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: connection-pool
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-pgbouncer-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: connection-pool
+data:
+  pgbouncer.ini: |
+    [databases]
+    ${{ values.databaseName }} = host=${{ values.name }}-master.${{ values.namespace }}.svc.cluster.local port=5432 dbname=${{ values.databaseName }}
+    
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 5432
+    auth_type = md5
+    auth_file = /etc/pgbouncer/userlist.txt
+    
+    pool_mode = transaction
+    server_reset_query = DISCARD ALL
+    
+    max_client_conn = {{ values.maxConnections }}
+    default_pool_size = 25
+    min_pool_size = 5
+    reserve_pool_size = 5
+    
+    server_lifetime = 3600
+    server_idle_timeout = 600
+    
+    log_connections = 1
+    log_disconnections = 1
+    log_pooler_errors = 1
+    
+    stats_users = postgres
+    admin_users = postgres
+  
+  userlist.txt: |
+    "${{ values.username }}" "md5$(echo -n '${{ values.username }}password' | md5sum | cut -d' ' -f1)"
+    "postgres" "md5$(echo -n 'postgrespassword' | md5sum | cut -d' ' -f1)"
+{% endif %}
+
+{% if values.enablePgAdmin %}
+---
+# pgAdmin web interface
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}-pgadmin
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: admin-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}
+        app.kubernetes.io/component: admin-ui
+        app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    spec:
+      {% if values.enablePodSecurityPolicy %}
+      securityContext:
+        runAsUser: 5050
+        runAsGroup: 5050
+        fsGroup: 5050
+        runAsNonRoot: true
+      {% endif %}
+      containers:
+      - name: pgadmin
+        image: dpage/pgadmin4:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        env:
+        - name: PGADMIN_DEFAULT_EMAIL
+          value: admin@${{ values.name }}.local
+        - name: PGADMIN_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: pgadmin-password
+        - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
+          value: "True"
+        - name: PGADMIN_CONFIG_LOGIN_BANNER
+          value: "PostgreSQL Cluster: ${{ values.name }}"
+        - name: PGADMIN_CONFIG_CONSOLE_LOG_LEVEL
+          value: "20"
+        volumeMounts:
+        - name: pgadmin-data
+          mountPath: /var/lib/pgadmin
+        - name: pgadmin-config
+          mountPath: /pgadmin4/servers.json
+          subPath: servers.json
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /misc/ping
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /misc/ping
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        {% if values.enablePodSecurityPolicy %}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 5050
+          capabilities:
+            drop:
+            - ALL
+        {% endif %}
+      volumes:
+      - name: pgadmin-data
+        persistentVolumeClaim:
+          claimName: ${{ values.name }}-pgadmin-data
+      - name: pgadmin-config
+        configMap:
+          name: ${{ values.name }}-pgadmin-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-pgadmin
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${{ values.name }}-pgadmin-data
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ${{ values.storageClass }}
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-pgadmin-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: admin-ui
+data:
+  servers.json: |
+    {
+      "Servers": {
+        "1": {
+          "Name": "${{ values.name }} Master",
+          "Group": "PostgreSQL Cluster",
+          "Host": "${{ values.name }}-master.${{ values.namespace }}.svc.cluster.local",
+          "Port": 5432,
+          "MaintenanceDB": "${{ values.databaseName }}",
+          "Username": "${{ values.username }}",
+          "SSLMode": "{% if values.enableSSL %}require{% else %}disable{% endif %}",
+          "SSLCert": "<STORAGE_DIR>/.postgresql/postgresql.crt",
+          "SSLKey": "<STORAGE_DIR>/.postgresql/postgresql.key",
+          "SSLRootCert": "<STORAGE_DIR>/.postgresql/root.crt"
+        }{% if values.enableReplication %},
+        {% for i in range(values.replicaCount) %}
+        "{{ i + 2 }}": {
+          "Name": "${{ values.name }} Replica {{ i + 1 }}",
+          "Group": "PostgreSQL Cluster",
+          "Host": "${{ values.name }}-replica-{{ i }}.${{ values.namespace }}.svc.cluster.local",
+          "Port": 5432,
+          "MaintenanceDB": "${{ values.databaseName }}",
+          "Username": "${{ values.username }}",
+          "SSLMode": "{% if values.enableSSL %}require{% else %}disable{% endif %}",
+          "SSLCert": "<STORAGE_DIR>/.postgresql/postgresql.crt",
+          "SSLKey": "<STORAGE_DIR>/.postgresql/postgresql.key",
+          "SSLRootCert": "<STORAGE_DIR>/.postgresql/root.crt"
+        }{% if i < values.replicaCount - 1 %},{% endif %}
+        {% endfor %}
+        {% endif %}
+      }
+    }
+{% endif %}

@@ -1,0 +1,401 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+data:
+  master.cnf: |
+    # MySQL Master Configuration
+    # Generated for ${{ values.name }} cluster
+
+    [mysqld]
+    # Server identification
+    server-id = 1
+
+    # Binary logging
+    log-bin = mysql-bin
+    binlog-format = ROW
+    binlog-do-db = ${{ values.databaseName }}
+    expire-logs-days = 7
+    max-binlog-size = 100M
+
+    # GTID
+    gtid-mode = ON
+    enforce-gtid-consistency = ON
+    log-slave-updates = ON
+
+    # Replication
+    {% if values.replicationMode == 'semi-sync' %}
+    rpl_semi_sync_master_enabled = 1
+    rpl_semi_sync_master_timeout = 1000
+    {% endif %}
+
+    # Connection settings
+    max-connections = ${{ values.maxConnections }}
+    max-connect-errors = 1000000
+    max-user-connections = 0
+
+    # Character set
+    character-set-server = ${{ values.charset }}
+    collation-server = ${{ values.collation }}
+
+    # InnoDB settings
+    innodb-buffer-pool-size = {{ (values.masterResources.memory | replace('Gi', '') | int * 1024 * 0.7) | int }}M
+    innodb-log-file-size = 256M
+    innodb-log-buffer-size = 16M
+    innodb-flush-log-at-trx-commit = 1
+    innodb-file-per-table = 1
+    innodb-flush-method = O_DIRECT
+
+    # Query cache (disabled in MySQL 8.0+)
+    {% if values.mysqlVersion.startswith('5.7') %}
+    query-cache-type = 1
+    query-cache-size = 64M
+    {% endif %}
+
+    # Slow query log
+    {% if values.enableSlowQueryLog %}
+    slow-query-log = 1
+    slow-query-log-file = /var/lib/mysql/slow.log
+    long-query-time = ${{ values.slowQueryTime }}
+    log-queries-not-using-indexes = 1
+    {% endif %}
+
+    # General log
+    general-log = 0
+    general-log-file = /var/lib/mysql/general.log
+
+    # Error log
+    log-error = /var/lib/mysql/error.log
+
+    # SSL Configuration
+    {% if values.enableSSL %}
+    ssl-ca = /etc/mysql/ssl/ca.pem
+    ssl-cert = /etc/mysql/ssl/server-cert.pem
+    ssl-key = /etc/mysql/ssl/server-key.pem
+    require-secure-transport = ON
+    {% endif %}
+
+    # Performance Schema
+    performance-schema = ON
+    performance-schema-instrument = 'stage/%=ON'
+    performance-schema-instrument = 'statement/%=ON'
+
+    # Security
+    local-infile = 0
+    skip-show-database
+
+    # MyISAM settings
+    key-buffer-size = 32M
+    myisam-recover-options = BACKUP,FORCE
+
+    # Thread settings
+    thread-cache-size = 50
+    thread-stack = 256K
+
+    # Table settings
+    table-open-cache = 4000
+    table-definition-cache = 2000
+
+    # Temporary tables
+    tmp-table-size = 64M
+    max-heap-table-size = 64M
+
+    # Sort and group
+    sort-buffer-size = 2M
+    read-buffer-size = 128K
+    read-rnd-buffer-size = 256K
+    join-buffer-size = 256K
+
+    # Network
+    max-allowed-packet = 64M
+    interactive-timeout = 28800
+    wait-timeout = 28800
+
+    # Timezone
+    default-time-zone = '+00:00'
+
+    [mysql]
+    default-character-set = ${{ values.charset }}
+
+    [client]
+    default-character-set = ${{ values.charset }}
+    {% if values.enableSSL %}
+    ssl-ca = /etc/mysql/ssl/ca.pem
+    ssl-cert = /etc/mysql/ssl/client-cert.pem
+    ssl-key = /etc/mysql/ssl/client-key.pem
+    {% endif %}
+
+  replica.cnf: |
+    # MySQL Replica Configuration
+    # Generated for ${{ values.name }} cluster
+
+    [mysqld]
+    # Server identification (will be overridden by command line)
+    server-id = 2
+
+    # Binary logging
+    log-bin = mysql-bin
+    binlog-format = ROW
+    expire-logs-days = 7
+    max-binlog-size = 100M
+
+    # GTID
+    gtid-mode = ON
+    enforce-gtid-consistency = ON
+    log-slave-updates = ON
+
+    # Read-only mode
+    read-only = ON
+    super-read-only = ON
+
+    # Replication
+    {% if values.replicationMode == 'semi-sync' %}
+    rpl_semi_sync_slave_enabled = 1
+    {% endif %}
+
+    # Relay log
+    relay-log = relay-bin
+    relay-log-index = relay-bin.index
+    relay-log-info-repository = TABLE
+    master-info-repository = TABLE
+    relay-log-recovery = ON
+
+    # Connection settings
+    max-connections = ${{ values.maxConnections }}
+    max-connect-errors = 1000000
+    max-user-connections = 0
+
+    # Character set
+    character-set-server = ${{ values.charset }}
+    collation-server = ${{ values.collation }}
+
+    # InnoDB settings
+    innodb-buffer-pool-size = {{ (values.replicaResources.memory | replace('Gi', '') | int * 1024 * 0.7) | int }}M
+    innodb-log-file-size = 256M
+    innodb-log-buffer-size = 16M
+    innodb-flush-log-at-trx-commit = 2
+    innodb-file-per-table = 1
+    innodb-flush-method = O_DIRECT
+
+    # Query cache (disabled in MySQL 8.0+)
+    {% if values.mysqlVersion.startswith('5.7') %}
+    query-cache-type = 1
+    query-cache-size = 64M
+    {% endif %}
+
+    # Slow query log
+    {% if values.enableSlowQueryLog %}
+    slow-query-log = 1
+    slow-query-log-file = /var/lib/mysql/slow.log
+    long-query-time = ${{ values.slowQueryTime }}
+    log-queries-not-using-indexes = 1
+    {% endif %}
+
+    # General log
+    general-log = 0
+    general-log-file = /var/lib/mysql/general.log
+
+    # Error log
+    log-error = /var/lib/mysql/error.log
+
+    # SSL Configuration
+    {% if values.enableSSL %}
+    ssl-ca = /etc/mysql/ssl/ca.pem
+    ssl-cert = /etc/mysql/ssl/server-cert.pem
+    ssl-key = /etc/mysql/ssl/server-key.pem
+    require-secure-transport = ON
+    {% endif %}
+
+    # Performance Schema
+    performance-schema = ON
+    performance-schema-instrument = 'stage/%=ON'
+    performance-schema-instrument = 'statement/%=ON'
+
+    # Security
+    local-infile = 0
+    skip-show-database
+
+    # MyISAM settings
+    key-buffer-size = 32M
+    myisam-recover-options = BACKUP,FORCE
+
+    # Thread settings
+    thread-cache-size = 50
+    thread-stack = 256K
+
+    # Table settings
+    table-open-cache = 4000
+    table-definition-cache = 2000
+
+    # Temporary tables
+    tmp-table-size = 64M
+    max-heap-table-size = 64M
+
+    # Sort and group
+    sort-buffer-size = 2M
+    read-buffer-size = 128K
+    read-rnd-buffer-size = 256K
+    join-buffer-size = 256K
+
+    # Network
+    max-allowed-packet = 64M
+    interactive-timeout = 28800
+    wait-timeout = 28800
+
+    # Timezone
+    default-time-zone = '+00:00'
+
+    [mysql]
+    default-character-set = ${{ values.charset }}
+
+    [client]
+    default-character-set = ${{ values.charset }}
+    {% if values.enableSSL %}
+    ssl-ca = /etc/mysql/ssl/ca.pem
+    ssl-cert = /etc/mysql/ssl/client-cert.pem
+    ssl-key = /etc/mysql/ssl/client-key.pem
+    {% endif %}
+
+  init-master.sh: |
+    #!/bin/bash
+    # MySQL Master Initialization Script
+    # Generated for ${{ values.name }} cluster
+
+    set -e
+
+    echo "Initializing MySQL Master..."
+
+    # Wait for MySQL to be ready
+    until mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
+        echo "Waiting for MySQL to be ready..."
+        sleep 2
+    done
+
+    echo "MySQL is ready. Setting up replication..."
+
+    # Create replication user
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    -- Create replication user
+    CREATE USER IF NOT EXISTS '${MYSQL_REPLICATION_USER}'@'%' IDENTIFIED BY '${MYSQL_REPLICATION_PASSWORD}';
+    GRANT REPLICATION SLAVE ON *.* TO '${MYSQL_REPLICATION_USER}'@'%';
+
+    -- Create monitoring user for exporter
+    CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY 'exporter_password' WITH MAX_USER_CONNECTIONS 3;
+    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
+
+    -- Create application user
+    CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
+    GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_USER}'@'%';
+
+    -- Flush privileges
+    FLUSH PRIVILEGES;
+
+    -- Show master status
+    SHOW MASTER STATUS;
+    EOF
+
+    {% if values.replicationMode == 'semi-sync' %}
+    # Install semi-synchronous replication plugin
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so';
+    SET GLOBAL rpl_semi_sync_master_enabled = 1;
+    SET GLOBAL rpl_semi_sync_master_timeout = 1000;
+    EOF
+    {% endif %}
+
+    # Create sample data if database is empty
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" <<EOF
+    -- Create sample table if it doesn't exist
+    CREATE TABLE IF NOT EXISTS health_check (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        status VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Insert initial health check record
+    INSERT IGNORE INTO health_check (id, status) VALUES (1, 'healthy');
+    EOF
+
+    echo "MySQL Master initialization completed successfully!"
+
+    # Show replication status
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SHOW MASTER STATUS\G"
+
+  init-replica.sh: |
+    #!/bin/bash
+    # MySQL Replica Initialization Script
+    # Generated for ${{ values.name }} cluster
+
+    set -e
+
+    echo "Initializing MySQL Replica..."
+
+    # Wait for MySQL to be ready
+    until mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
+        echo "Waiting for MySQL to be ready..."
+        sleep 2
+    done
+
+    echo "MySQL is ready. Waiting for master to be available..."
+
+    # Wait for master to be ready
+    until mysql -h "${MYSQL_MASTER_HOST}" -P "${MYSQL_MASTER_PORT}" -u "${MYSQL_REPLICATION_USER}" -p"${MYSQL_REPLICATION_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
+        echo "Waiting for MySQL master to be ready..."
+        sleep 5
+    done
+
+    echo "Master is ready. Setting up replication..."
+
+    {% if values.replicationMode == 'semi-sync' %}
+    # Install semi-synchronous replication plugin
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so';
+    SET GLOBAL rpl_semi_sync_slave_enabled = 1;
+    EOF
+    {% endif %}
+
+    # Configure replication
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    -- Stop slave if running
+    STOP SLAVE;
+
+    -- Reset slave
+    RESET SLAVE ALL;
+
+    -- Configure master connection
+    CHANGE MASTER TO
+        MASTER_HOST='${MYSQL_MASTER_HOST}',
+        MASTER_PORT=${MYSQL_MASTER_PORT},
+        MASTER_USER='${MYSQL_REPLICATION_USER}',
+        MASTER_PASSWORD='${MYSQL_REPLICATION_PASSWORD}',
+        MASTER_AUTO_POSITION=1,
+        MASTER_CONNECT_RETRY=10,
+        MASTER_RETRY_COUNT=3;
+
+    -- Start slave
+    START SLAVE;
+
+    -- Show slave status
+    SHOW SLAVE STATUS\G
+    EOF
+
+    # Wait a moment for replication to start
+    sleep 5
+
+    # Create monitoring user for exporter
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    -- Create monitoring user for exporter
+    CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY 'exporter_password' WITH MAX_USER_CONNECTIONS 3;
+    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
+    FLUSH PRIVILEGES;
+    EOF
+
+    echo "MySQL Replica initialization completed successfully!"
+
+    # Show final replication status
+    mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SHOW SLAVE STATUS\G" | grep -E "(Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master|Last_Error)"

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${{ values.namespace }}
+  labels:
+    name: ${{ values.namespace }}
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: identity-management

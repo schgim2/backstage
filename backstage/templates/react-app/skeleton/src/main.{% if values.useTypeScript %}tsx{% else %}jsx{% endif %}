@@ -1,0 +1,72 @@
+{% if values.useTypeScript %}import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+{% else %}import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+{% endif %}
+{% if values.uiLibrary == "material-ui" %}import { ThemeProvider, createTheme } from '@mui/material/styles'
+import CssBaseline from '@mui/material/CssBaseline'
+{% elif values.uiLibrary == "chakra-ui" %}import { ChakraProvider } from '@chakra-ui/react'
+{% endif %}
+{% if values.includeStateManagement == "redux-toolkit" %}import { Provider } from 'react-redux'
+import { store } from './store/store{% if values.useTypeScript %}.ts{% else %}.js{% endif %}'
+{% endif %}
+{% if values.includeAuth and values.authProvider == "auth0" %}import { Auth0Provider } from '@auth0/auth0-react'
+{% endif %}
+{% if values.includeAPI and values.apiClient == "react-query" %}import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+{% endif %}
+import './styles/index.css'
+
+{% if values.uiLibrary == "material-ui" %}
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+  },
+})
+{% endif %}
+
+{% if values.includeAPI and values.apiClient == "react-query" %}
+const queryClient = new QueryClient()
+{% endif %}
+
+{% if values.useTypeScript %}ReactDOM.createRoot(document.getElementById('root')!).render({% else %}ReactDOM.createRoot(document.getElementById('root')).render({% endif %}
+  <React.StrictMode>
+{% if values.includeAuth and values.authProvider == "auth0" %}
+    <Auth0Provider
+      domain={import.meta.env.VITE_AUTH0_DOMAIN}
+      clientId={import.meta.env.VITE_AUTH0_CLIENT_ID}
+      authorizationParams={{
+        redirect_uri: window.location.origin
+      }}
+    >
+{% endif %}
+{% if values.includeStateManagement == "redux-toolkit" %}
+    <Provider store={store}>
+{% endif %}
+{% if values.includeAPI and values.apiClient == "react-query" %}
+    <QueryClientProvider client={queryClient}>
+{% endif %}
+{% if values.uiLibrary == "material-ui" %}
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <App />
+    </ThemeProvider>
+{% elif values.uiLibrary == "chakra-ui" %}
+    <ChakraProvider>
+      <App />
+    </ChakraProvider>
+{% else %}
+      <App />
+{% endif %}
+{% if values.includeAPI and values.apiClient == "react-query" %}
+    </QueryClientProvider>
+{% endif %}
+{% if values.includeStateManagement == "redux-toolkit" %}
+    </Provider>
+{% endif %}
+{% if values.includeAuth and values.authProvider == "auth0" %}
+    </Auth0Provider>
+{% endif %}
+  </React.StrictMode>,
+)

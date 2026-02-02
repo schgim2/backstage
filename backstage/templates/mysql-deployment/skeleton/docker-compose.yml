@@ -1,0 +1,330 @@
+version: '3.8'
+
+services:
+  # MySQL Master
+  mysql-master:
+    image: mysql:${{ values.mysqlVersion }}
+    container_name: ${{ values.name }}-master
+    hostname: mysql-master
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${{ values.databaseName }}
+      - MYSQL_USER=${{ values.username }}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_REPLICATION_USER=replicator
+      - MYSQL_REPLICATION_PASSWORD=${MYSQL_REPLICATION_PASSWORD}
+    volumes:
+      - mysql_master_data:/var/lib/mysql
+      - ./config/master.cnf:/etc/mysql/conf.d/master.cnf
+      - ./scripts/init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
+      - ./backups:/backups
+    ports:
+      - "3306:3306"
+    networks:
+      - mysql-network
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --log-slave-updates=ON
+      --max-connections=${{ values.maxConnections }}
+      --character-set-server=${{ values.charset }}
+      --collation-server=${{ values.collation }}
+      {% if values.enableSSL %}--ssl-ca=/etc/mysql/ssl/ca.pem --ssl-cert=/etc/mysql/ssl/server-cert.pem --ssl-key=/etc/mysql/ssl/server-key.pem{% endif %}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+{% if values.enableReplication %}
+  # MySQL Replicas
+{% for i in range(values.replicaCount) %}
+  mysql-replica-{{ i }}:
+    image: mysql:${{ values.mysqlVersion }}
+    container_name: ${{ values.name }}-replica-{{ i }}
+    hostname: mysql-replica-{{ i }}
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${{ values.databaseName }}
+      - MYSQL_USER=${{ values.username }}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_REPLICATION_USER=replicator
+      - MYSQL_REPLICATION_PASSWORD=${MYSQL_REPLICATION_PASSWORD}
+      - MYSQL_MASTER_HOST=mysql-master
+      - MYSQL_MASTER_PORT=3306
+    volumes:
+      - mysql_replica_{{ i }}_data:/var/lib/mysql
+      - ./config/replica.cnf:/etc/mysql/conf.d/replica.cnf
+      - ./scripts/init-replica.sh:/docker-entrypoint-initdb.d/init-replica.sh
+    ports:
+      - "{{ 3307 + i }}:3306"
+    networks:
+      - mysql-network
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    command: >
+      --server-id={{ i + 2 }}
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --log-slave-updates=ON
+      --read-only=ON
+      --super-read-only=ON
+      --max-connections=${{ values.maxConnections }}
+      --character-set-server=${{ values.charset }}
+      --collation-server=${{ values.collation }}
+      {% if values.enableSSL %}--ssl-ca=/etc/mysql/ssl/ca.pem --ssl-cert=/etc/mysql/ssl/server-cert.pem --ssl-key=/etc/mysql/ssl/server-key.pem{% endif %}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+{% endfor %}
+{% endif %}
+
+{% if values.enableProxySQL %}
+  # ProxySQL Load Balancer
+  proxysql:
+    image: proxysql/proxysql:latest
+    container_name: ${{ values.name }}-proxysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=${{ values.username }}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./config/proxysql.cnf:/etc/proxysql.cnf
+      - proxysql_data:/var/lib/proxysql
+    ports:
+      - "6033:6033"
+      - "6032:6032"
+    networks:
+      - mysql-network
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "6032", "-u", "admin", "-padmin", "-e", "SELECT 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enableMonitoring %}
+  # MySQL Exporter for Prometheus
+  mysql-exporter:
+    image: prom/mysqld-exporter:latest
+    container_name: ${{ values.name }}-exporter
+    environment:
+      - DATA_SOURCE_NAME=${{ values.username }}:${MYSQL_PASSWORD}@(mysql-master:3306)/${{ values.databaseName }}
+    ports:
+      - "9104:9104"
+    networks:
+      - mysql-network
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9104/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ${{ values.name }}-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - mysql-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Prometheus for Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${{ values.name }}-prometheus
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - mysql-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enablePhpMyAdmin %}
+  # phpMyAdmin Web Interface
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: ${{ values.name }}-phpmyadmin
+    environment:
+      - PMA_HOST=mysql-master
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - UPLOAD_LIMIT=1G
+    ports:
+      - "8080:80"
+    networks:
+      - mysql-network
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+{% if values.enableBackup %}
+  # Backup Service
+  backup:
+    image: mysql:${{ values.mysqlVersion }}
+    container_name: ${{ values.name }}-backup
+    environment:
+      - MYSQL_HOST=mysql-master
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${{ values.databaseName }}
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - BACKUP_SCHEDULE=${{ values.backupSchedule }}
+      - BACKUP_RETENTION=${{ values.backupRetention }}
+      - BACKUP_STORAGE=${{ values.backupStorage }}
+{% if values.backupStorage == 's3' %}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+{% elif values.backupStorage == 'gcs' %}
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/service-account.json
+      - GCS_BUCKET=${GCS_BUCKET}
+{% endif %}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh
+      - ./scripts/restore.sh:/usr/local/bin/restore.sh
+{% if values.backupStorage == 'gcs' %}
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/credentials/service-account.json
+{% endif %}
+    networks:
+      - mysql-network
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+    command: >
+      sh -c "
+        chmod +x /usr/local/bin/backup.sh /usr/local/bin/restore.sh &&
+        echo '${{ values.backupSchedule }} /usr/local/bin/backup.sh' | crontab - &&
+        crond -f
+      "
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+{% endif %}
+
+volumes:
+  mysql_master_data:
+    driver: local
+{% if values.enableReplication %}
+{% for i in range(values.replicaCount) %}
+  mysql_replica_{{ i }}_data:
+    driver: local
+{% endfor %}
+{% endif %}
+{% if values.enableProxySQL %}
+  proxysql_data:
+    driver: local
+{% endif %}
+{% if values.enableMonitoring %}
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+{% endif %}
+
+networks:
+  mysql-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

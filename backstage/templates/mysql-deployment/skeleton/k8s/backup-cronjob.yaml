@@ -1,0 +1,234 @@
+{% if values.enableBackup %}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ${{ values.name }}-backup
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  schedule: "${{ values.backupSchedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${{ values.name }}
+            app.kubernetes.io/component: backup
+            app.kubernetes.io/part-of: ${{ values.name }}-cluster
+        spec:
+          restartPolicy: OnFailure
+          {% if values.enablePodSecurityPolicy %}
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            runAsNonRoot: true
+          {% endif %}
+          containers:
+          - name: mysql-backup
+            image: mysql:${{ values.mysqlVersion }}
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: MYSQL_HOST
+              value: ${{ values.name }}-master
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+              value: root
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-credentials
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: ${{ values.databaseName }}
+            - name: BACKUP_RETENTION
+              value: "${{ values.backupRetention }}"
+            - name: BACKUP_STORAGE
+              value: ${{ values.backupStorage }}
+            {% if values.backupStorage == 's3' %}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: aws-secret-access-key
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: s3-bucket
+            {% elif values.backupStorage == 'gcs' %}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /credentials/service-account.json
+            - name: GCS_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: gcs-bucket
+            {% endif %}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              # Configuration
+              BACKUP_DIR="/backups"
+              TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+              BACKUP_FILE="${BACKUP_DIR}/mysql_backup_${TIMESTAMP}.sql"
+              BACKUP_FILE_COMPRESSED="${BACKUP_FILE}.gz"
+              
+              # Create backup directory
+              mkdir -p "${BACKUP_DIR}"
+              
+              echo "Starting MySQL backup at $(date)"
+              echo "Backup file: ${BACKUP_FILE_COMPRESSED}"
+              
+              # Create database backup
+              echo "Creating database dump..."
+              mysqldump \
+                  --host="${MYSQL_HOST}" \
+                  --port="${MYSQL_PORT}" \
+                  --user="${MYSQL_USER}" \
+                  --password="${MYSQL_PASSWORD}" \
+                  --single-transaction \
+                  --routines \
+                  --triggers \
+                  --events \
+                  --hex-blob \
+                  --master-data=2 \
+                  --flush-logs \
+                  --all-databases \
+                  > "${BACKUP_FILE}"
+              
+              # Compress backup
+              echo "Compressing backup..."
+              gzip "${BACKUP_FILE}"
+              
+              # Verify backup
+              if [ -f "${BACKUP_FILE_COMPRESSED}" ]; then
+                  BACKUP_SIZE=$(du -h "${BACKUP_FILE_COMPRESSED}" | cut -f1)
+                  echo "Backup created successfully: ${BACKUP_FILE_COMPRESSED} (${BACKUP_SIZE})"
+              else
+                  echo "ERROR: Backup file not created!"
+                  exit 1
+              fi
+              
+              {% if values.backupStorage == 's3' %}
+              # Upload to S3
+              if command -v aws >/dev/null 2>&1; then
+                  echo "Uploading backup to S3..."
+                  aws s3 cp "${BACKUP_FILE_COMPRESSED}" "s3://${S3_BUCKET}/mysql-backups/"
+                  echo "Backup uploaded to S3 successfully"
+              else
+                  echo "WARNING: AWS CLI not found, installing..."
+                  apt-get update && apt-get install -y awscli
+                  aws s3 cp "${BACKUP_FILE_COMPRESSED}" "s3://${S3_BUCKET}/mysql-backups/"
+              fi
+              {% elif values.backupStorage == 'gcs' %}
+              # Upload to GCS
+              if command -v gsutil >/dev/null 2>&1; then
+                  echo "Uploading backup to Google Cloud Storage..."
+                  gsutil cp "${BACKUP_FILE_COMPRESSED}" "gs://${GCS_BUCKET}/mysql-backups/"
+                  echo "Backup uploaded to GCS successfully"
+              else
+                  echo "WARNING: gsutil not found, installing..."
+                  apt-get update && apt-get install -y google-cloud-sdk
+                  gsutil cp "${BACKUP_FILE_COMPRESSED}" "gs://${GCS_BUCKET}/mysql-backups/"
+              fi
+              {% endif %}
+              
+              # Clean up old backups
+              echo "Cleaning up old backups (retention: ${BACKUP_RETENTION} days)..."
+              find "${BACKUP_DIR}" -name "mysql_backup_*.sql.gz" -type f -mtime +${BACKUP_RETENTION} -delete
+              
+              echo "Backup completed successfully at $(date)"
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backups
+            {% if values.backupStorage == 'gcs' %}
+            - name: gcs-credentials
+              mountPath: /credentials
+              readOnly: true
+            {% endif %}
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            {% if values.enablePodSecurityPolicy %}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              runAsNonRoot: true
+              runAsUser: 999
+              capabilities:
+                drop:
+                - ALL
+            {% endif %}
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: ${{ values.name }}-backup-pvc
+          {% if values.backupStorage == 'gcs' %}
+          - name: gcs-credentials
+            secret:
+              secretName: ${{ values.name }}-backup-credentials
+              items:
+              - key: service-account.json
+                path: service-account.json
+          {% endif %}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${{ values.name }}-backup-pvc
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ${{ values.storageClass }}
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${{ values.name }}-backup-credentials
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+type: Opaque
+data:
+  # Note: These are placeholder values. In production, provide actual credentials
+  {% if values.backupStorage == 's3' %}
+  aws-access-key-id: {{ "your-aws-access-key-id" | b64encode }}
+  aws-secret-access-key: {{ "your-aws-secret-access-key" | b64encode }}
+  s3-bucket: {{ "your-s3-bucket-name" | b64encode }}
+  {% elif values.backupStorage == 'gcs' %}
+  gcs-bucket: {{ "your-gcs-bucket-name" | b64encode }}
+  service-account.json: {{ "{}" | b64encode }}
+  {% endif %}
+{% endif %}

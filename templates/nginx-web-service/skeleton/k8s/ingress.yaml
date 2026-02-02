@@ -1,0 +1,94 @@
+{% if values.domain %}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: nginx-web-service
+    app.kubernetes.io/instance: ${{ values.name }}
+  annotations:
+    kubernetes.io/ingress.class: ${{ values.ingressClass }}
+    {% if values.enableSSL %}
+    {% if values.sslProvider == "cert-manager" %}
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    {% endif %}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {% else %}
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    {% endif %}
+    {% if values.enableRateLimit %}
+    nginx.ingress.kubernetes.io/rate-limit: "${{ values.rateLimitRpm }}"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    {% endif %}
+    {% if values.serviceType == "spa-application" %}
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      try_files $uri $uri/ /index.html;
+    {% endif %}
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  {% if values.enableSSL %}
+  tls:
+  - hosts:
+    - ${{ values.domain }}
+    {% if values.additionalDomains %}
+    {% for domain in values.additionalDomains %}
+    - {{ domain }}
+    {% endfor %}
+    {% endif %}
+    secretName: ${{ values.name }}-tls
+  {% endif %}
+  rules:
+  - host: ${{ values.domain }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${{ values.name }}
+            port:
+              number: 80
+  {% if values.additionalDomains %}
+  {% for domain in values.additionalDomains %}
+  - host: {{ domain }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${{ values.name }}
+            port:
+              number: 80
+  {% endfor %}
+  {% endif %}
+
+---
+{% if values.enableSSL and values.sslProvider == "cert-manager" %}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ${{ values.name }}-tls
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: nginx-web-service
+    app.kubernetes.io/instance: ${{ values.name }}
+spec:
+  secretName: ${{ values.name }}-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - ${{ values.domain }}
+  {% if values.additionalDomains %}
+  {% for domain in values.additionalDomains %}
+  - {{ domain }}
+  {% endfor %}
+  {% endif %}
+{% endif %}
+{% endif %}

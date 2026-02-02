@@ -1,0 +1,219 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: redis-cluster-deployment
+  title: Redis Cluster Container Deployment
+  description: Deploy a highly available Redis cluster using Docker Compose and Kubernetes
+  tags:
+    - redis
+    - cluster
+    - database
+    - cache
+    - container
+    - docker
+    - kubernetes
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+        - description
+        - repoUrl
+      properties:
+        name:
+          type: string
+          title: Component Name
+          description: Unique name for your Redis cluster
+          pattern: ^[a-zA-Z][-a-zA-Z0-9]*[a-zA-Z0-9]$
+          ui:field: EntityNamePicker
+        description:
+          type: string
+          title: Description
+          description: Brief description of your Redis cluster deployment
+          ui:options:
+            rows: 3
+        repoUrl:
+          type: string
+          title: Repository Location
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+    - title: Redis Cluster Configuration
+      properties:
+        clusterSize:
+          type: integer
+          title: Cluster Size
+          description: Number of Redis master nodes (minimum 3)
+          default: 3
+          minimum: 3
+          maximum: 9
+        replicationFactor:
+          type: integer
+          title: Replication Factor
+          description: Number of replica nodes per master
+          default: 1
+          minimum: 0
+          maximum: 3
+        redisVersion:
+          type: string
+          title: Redis Version
+          description: Redis Docker image version
+          default: "7.2-alpine"
+          enum:
+            - "7.2-alpine"
+            - "7.0-alpine"
+            - "6.2-alpine"
+        enableSentinel:
+          type: boolean
+          title: Enable Redis Sentinel
+          description: Enable Redis Sentinel for high availability
+          default: true
+        sentinelQuorum:
+          type: integer
+          title: Sentinel Quorum
+          description: Minimum number of sentinels that need to agree
+          default: 2
+          minimum: 1
+
+    - title: Deployment Options
+      properties:
+        deploymentType:
+          type: string
+          title: Deployment Type
+          description: Choose deployment platform
+          default: "both"
+          enum:
+            - "docker-compose"
+            - "kubernetes"
+            - "both"
+        namespace:
+          type: string
+          title: Kubernetes Namespace
+          description: Kubernetes namespace for deployment
+          default: "redis-cluster"
+        storageClass:
+          type: string
+          title: Storage Class
+          description: Kubernetes storage class for persistent volumes
+          default: "standard"
+        storageSize:
+          type: string
+          title: Storage Size
+          description: Size of persistent volume per Redis instance
+          default: "10Gi"
+
+    - title: Security & Networking
+      properties:
+        enableAuth:
+          type: boolean
+          title: Enable Authentication
+          description: Enable Redis AUTH
+          default: true
+        enableTLS:
+          type: boolean
+          title: Enable TLS
+          description: Enable TLS encryption
+          default: false
+        networkPolicy:
+          type: boolean
+          title: Enable Network Policy
+          description: Create Kubernetes network policies
+          default: true
+        exposeService:
+          type: string
+          title: Service Exposure
+          description: How to expose the Redis service
+          default: "ClusterIP"
+          enum:
+            - "ClusterIP"
+            - "NodePort"
+            - "LoadBalancer"
+
+    - title: Monitoring & Logging
+      properties:
+        enableMonitoring:
+          type: boolean
+          title: Enable Monitoring
+          description: Include Prometheus monitoring setup
+          default: true
+        enableLogging:
+          type: boolean
+          title: Enable Centralized Logging
+          description: Configure log aggregation
+          default: true
+        logLevel:
+          type: string
+          title: Log Level
+          description: Redis log level
+          default: "notice"
+          enum:
+            - "debug"
+            - "verbose"
+            - "notice"
+            - "warning"
+
+  steps:
+    - id: fetch-base
+      name: Fetch Base Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          clusterSize: ${{ parameters.clusterSize }}
+          replicationFactor: ${{ parameters.replicationFactor }}
+          redisVersion: ${{ parameters.redisVersion }}
+          enableSentinel: ${{ parameters.enableSentinel }}
+          sentinelQuorum: ${{ parameters.sentinelQuorum }}
+          deploymentType: ${{ parameters.deploymentType }}
+          namespace: ${{ parameters.namespace }}
+          storageClass: ${{ parameters.storageClass }}
+          storageSize: ${{ parameters.storageSize }}
+          enableAuth: ${{ parameters.enableAuth }}
+          enableTLS: ${{ parameters.enableTLS }}
+          networkPolicy: ${{ parameters.networkPolicy }}
+          exposeService: ${{ parameters.exposeService }}
+          enableMonitoring: ${{ parameters.enableMonitoring }}
+          enableLogging: ${{ parameters.enableLogging }}
+          logLevel: ${{ parameters.logLevel }}
+          owner: ${{ parameters.repoUrl | parseRepoUrl | pick("owner") }}
+          repo: ${{ parameters.repoUrl | parseRepoUrl | pick("repo") }}
+
+    - id: publish
+      name: Publish to Repository
+      action: publish:github
+      input:
+        allowedHosts:
+          - github.com
+          - gitlab.com
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: "Initial Redis cluster deployment setup"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        icon: github
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: View Deployment Guide
+        url: ${{ steps.publish.output.remoteUrl }}/blob/main/README.md
+        icon: docs

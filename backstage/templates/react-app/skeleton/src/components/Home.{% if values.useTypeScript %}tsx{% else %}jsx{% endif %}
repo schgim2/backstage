@@ -1,0 +1,193 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+{% if values.uiLibrary == "material-ui" %}import { Container, Typography, Button, Box } from '@mui/material'
+{% elif values.uiLibrary == "chakra-ui" %}import { Container, Heading, Text, Button, VStack } from '@chakra-ui/react'
+{% elif values.uiLibrary == "ant-design" %}import { Typography, Button, Space } from 'antd'
+const { Title, Paragraph } = Typography
+{% endif %}
+{% if values.includeStateManagement == "zustand" %}import { useCounterStore } from '../store/counterStore{% if values.useTypeScript %}.ts{% else %}.js{% endif %}'
+{% elif values.includeStateManagement == "redux-toolkit" %}import { useSelector, useDispatch } from 'react-redux'
+import { increment, decrement } from '../store/counterSlice{% if values.useTypeScript %}.ts{% else %}.js{% endif %}'
+{% if values.useTypeScript %}import type { RootState } from '../store/store.ts'
+{% endif %}
+{% endif %}
+
+{% if values.useTypeScript %}const Home: React.FC = () => {{% else %}const Home = () => {{% endif %}
+{% if values.includeStateManagement == "zustand" %}
+  const { count, increment, decrement } = useCounterStore()
+{% elif values.includeStateManagement == "redux-toolkit" %}
+  const count = useSelector((state{% if values.useTypeScript %}: RootState{% endif %}) => state.counter.value)
+  const dispatch = useDispatch()
+{% endif %}
+
+  return (
+{% if values.uiLibrary == "material-ui" %}
+    <Container maxWidth="md">
+      <Box sx={{ textAlign: 'center', mt: 4 }}>
+        <Typography variant="h2" component="h1" gutterBottom>
+          Welcome to ${{ values.name }}
+        </Typography>
+        <Typography variant="h5" component="p" gutterBottom>
+          ${{ values.description }}
+        </Typography>
+{% if values.includeStateManagement != "none" %}
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h4" gutterBottom>
+            Counter: {count}
+          </Typography>
+          <Button 
+            variant="contained" 
+            onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(increment()){% else %}increment(){% endif %}}
+            sx={{ mr: 2 }}
+          >
+            +
+          </Button>
+          <Button 
+            variant="outlined" 
+            onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(decrement()){% else %}decrement(){% endif %}}
+          >
+            -
+          </Button>
+        </Box>
+{% endif %}
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="body1">
+            Edit <code>src/App.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}</code> and save to reload.
+          </Typography>
+        </Box>
+      </Box>
+    </Container>
+{% elif values.uiLibrary == "chakra-ui" %}
+    <Container maxW="container.md" centerContent>
+      <VStack spacing={8} textAlign="center" mt={8}>
+        <Heading as="h1" size="2xl">
+          Welcome to ${{ values.name }}
+        </Heading>
+        <Text fontSize="xl">
+          ${{ values.description }}
+        </Text>
+{% if values.includeStateManagement != "none" %}
+        <VStack spacing={4}>
+          <Heading as="h2" size="lg">
+            Counter: {count}
+          </Heading>
+          <VStack spacing={2}>
+            <Button 
+              colorScheme="blue" 
+              onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(increment()){% else %}increment(){% endif %}}
+            >
+              +
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(decrement()){% else %}decrement(){% endif %}}
+            >
+              -
+            </Button>
+          </VStack>
+        </VStack>
+{% endif %}
+        <Text>
+          Edit <code>src/App.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}</code> and save to reload.
+        </Text>
+      </VStack>
+    </Container>
+{% elif values.uiLibrary == "ant-design" %}
+    <div style={{ textAlign: 'center', padding: '50px' }}>
+      <Title level={1}>Welcome to ${{ values.name }}</Title>
+      <Paragraph style={{ fontSize: '18px' }}>
+        ${{ values.description }}
+      </Paragraph>
+{% if values.includeStateManagement != "none" %}
+      <div style={{ margin: '40px 0' }}>
+        <Title level={2}>Counter: {count}</Title>
+        <Space>
+          <Button 
+            type="primary" 
+            onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(increment()){% else %}increment(){% endif %}}
+          >
+            +
+          </Button>
+          <Button 
+            onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(decrement()){% else %}decrement(){% endif %}}
+          >
+            -
+          </Button>
+        </Space>
+      </div>
+{% endif %}
+      <Paragraph>
+        Edit <code>src/App.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}</code> and save to reload.
+      </Paragraph>
+    </div>
+{% elif values.uiLibrary == "tailwind" %}
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <h1 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Welcome to ${{ values.name }}
+        </h1>
+        <p className="mt-2 text-center text-sm text-gray-600">
+          ${{ values.description }}
+        </p>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+{% if values.includeStateManagement != "none" %}
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Counter: {count}
+            </h2>
+            <div className="space-x-4">
+              <button
+                onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(increment()){% else %}increment(){% endif %}}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+              >
+                +
+              </button>
+              <button
+                onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(decrement()){% else %}decrement(){% endif %}}
+                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+              >
+                -
+              </button>
+            </div>
+          </div>
+{% endif %}
+          <div className="text-center">
+            <p className="text-sm text-gray-500">
+              Edit <code className="bg-gray-100 px-1 py-0.5 rounded">src/App.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}</code> and save to reload.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+{% else %}
+    <div className="home">
+      <header className="home-header">
+        <h1>Welcome to ${{ values.name }}</h1>
+        <p>${{ values.description }}</p>
+{% if values.includeStateManagement != "none" %}
+        <div className="counter-section">
+          <h2>Counter: {count}</h2>
+          <div className="counter-buttons">
+            <button onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(increment()){% else %}increment(){% endif %}}>
+              +
+            </button>
+            <button onClick={() => {% if values.includeStateManagement == "redux-toolkit" %}dispatch(decrement()){% else %}decrement(){% endif %}}>
+              -
+            </button>
+          </div>
+        </div>
+{% endif %}
+        <p>
+          Edit <code>src/App.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}</code> and save to reload.
+        </p>
+      </header>
+    </div>
+{% endif %}
+  )
+}
+
+export default Home

@@ -1,0 +1,168 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+import { Link, useLocation } from 'react-router-dom'
+{% if values.uiLibrary == "material-ui" %}import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material'
+{% elif values.uiLibrary == "chakra-ui" %}import { Box, Flex, Link as ChakraLink, Spacer } from '@chakra-ui/react'
+{% elif values.uiLibrary == "ant-design" %}import { Menu } from 'antd'
+import type { MenuProps } from 'antd'
+{% endif %}
+
+{% if values.useTypeScript %}const Navigation: React.FC = () => {{% else %}const Navigation = () => {{% endif %}
+  const location = useLocation()
+
+{% if values.uiLibrary == "material-ui" %}
+  return (
+    <AppBar position="static">
+      <Toolbar>
+        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          ${{ values.name }}
+        </Typography>
+        <Box>
+          <Button 
+            color="inherit" 
+            component={Link} 
+            to="/"
+            sx={{ 
+              textDecoration: location.pathname === '/' ? 'underline' : 'none' 
+            }}
+          >
+            Home
+          </Button>
+          <Button 
+            color="inherit" 
+            component={Link} 
+            to="/about"
+            sx={{ 
+              textDecoration: location.pathname === '/about' ? 'underline' : 'none' 
+            }}
+          >
+            About
+          </Button>
+        </Box>
+      </Toolbar>
+    </AppBar>
+  )
+{% elif values.uiLibrary == "chakra-ui" %}
+  return (
+    <Box bg="blue.500" px={4}>
+      <Flex h={16} alignItems="center">
+        <Box fontWeight="bold" fontSize="lg" color="white">
+          ${{ values.name }}
+        </Box>
+        <Spacer />
+        <Box>
+          <ChakraLink
+            as={Link}
+            to="/"
+            px={3}
+            py={2}
+            rounded="md"
+            color="white"
+            bg={location.pathname === '/' ? 'blue.600' : 'transparent'}
+            _hover={{ bg: 'blue.600' }}
+          >
+            Home
+          </ChakraLink>
+          <ChakraLink
+            as={Link}
+            to="/about"
+            px={3}
+            py={2}
+            rounded="md"
+            color="white"
+            bg={location.pathname === '/about' ? 'blue.600' : 'transparent'}
+            _hover={{ bg: 'blue.600' }}
+            ml={2}
+          >
+            About
+          </ChakraLink>
+        </Box>
+      </Flex>
+    </Box>
+  )
+{% elif values.uiLibrary == "ant-design" %}
+  const items{% if values.useTypeScript %}: MenuProps['items']{% endif %} = [
+    {
+      key: '/',
+      label: <Link to="/">Home</Link>,
+    },
+    {
+      key: '/about',
+      label: <Link to="/about">About</Link>,
+    },
+  ]
+
+  return (
+    <Menu
+      theme="dark"
+      mode="horizontal"
+      selectedKeys={[location.pathname]}
+      items={items}
+      style={{ lineHeight: '64px' }}
+    />
+  )
+{% elif values.uiLibrary == "tailwind" %}
+  return (
+    <nav className="bg-blue-600 shadow-lg">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="flex justify-between h-16">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <h1 className="text-white text-xl font-bold">
+                ${{ values.name }}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            <Link
+              to="/"
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                location.pathname === '/'
+                  ? 'bg-blue-700 text-white'
+                  : 'text-blue-100 hover:bg-blue-500 hover:text-white'
+              }`}
+            >
+              Home
+            </Link>
+            <Link
+              to="/about"
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                location.pathname === '/about'
+                  ? 'bg-blue-700 text-white'
+                  : 'text-blue-100 hover:bg-blue-500 hover:text-white'
+              }`}
+            >
+              About
+            </Link>
+          </div>
+        </div>
+      </div>
+    </nav>
+  )
+{% else %}
+  return (
+    <nav className="navigation">
+      <div className="nav-brand">
+        <h1>${{ values.name }}</h1>
+      </div>
+      <div className="nav-links">
+        <Link 
+          to="/" 
+          className={location.pathname === '/' ? 'active' : ''}
+        >
+          Home
+        </Link>
+        <Link 
+          to="/about" 
+          className={location.pathname === '/about' ? 'active' : ''}
+        >
+          About
+        </Link>
+      </div>
+    </nav>
+  )
+{% endif %}
+}
+
+export default Navigation

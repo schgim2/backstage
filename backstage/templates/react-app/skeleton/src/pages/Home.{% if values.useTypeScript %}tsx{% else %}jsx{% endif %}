@@ -1,0 +1,10 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+import Home from '../components/Home{% if values.useTypeScript %}.tsx{% else %}.jsx{% endif %}'
+
+{% if values.useTypeScript %}const HomePage: React.FC = () => {{% else %}const HomePage = () => {{% endif %}
+  return <Home />
+}
+
+export default HomePage

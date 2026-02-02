@@ -1,0 +1,29 @@
+site_name: Spring Boot Application Template
+site_description: >-
+  Enterprise-grade Spring Boot application template with Java, Maven, and
+  production-ready configurations
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration Options: configuration-options.md
+  - Dependencies: dependencies.md
+  - Database Setup: database-setup.md
+  - Security: security.md
+  - Testing: testing.md
+  - Deployment: deployment.md
+  - Monitoring: monitoring.md
+  - Best Practices: best-practices.md
+theme:
+  name: material
+  palette:
+    primary: green
+    accent: light-green
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

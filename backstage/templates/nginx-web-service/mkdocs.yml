@@ -1,0 +1,26 @@
+site_name: NGINX Web Service Template
+site_description: >-
+  Comprehensive NGINX web service deployment template with SSL, caching, and
+  monitoring
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Service Types: service-types.md
+  - SSL Configuration: ssl-configuration.md
+  - Performance: performance.md
+  - Monitoring: monitoring.md
+  - Troubleshooting: troubleshooting.md
+theme:
+  name: material
+  palette:
+    primary: green
+    accent: green
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

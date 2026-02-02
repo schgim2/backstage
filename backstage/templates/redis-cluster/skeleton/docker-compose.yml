@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  # Redis Master Nodes
+  {% for i in range(values.clusterSize) %}
+  redis-master-{{ i + 1 }}:
+    image: redis:${{ values.redisVersion }}
+    container_name: redis-master-{{ i + 1 }}
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "{{ 7001 + i }}:6379"
+      - "{{ 17001 + i }}:16379"
+    volumes:
+      - ./config/redis-master.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-master-{{ i + 1 }}-data:/data
+      {% if values.enableTLS %}
+      - ./certs:/tls:ro
+      {% endif %}
+    environment:
+      - REDIS_PORT=6379
+      - CLUSTER_ANNOUNCE_IP=redis-master-{{ i + 1 }}
+      {% if values.enableAuth %}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      {% endif %}
+    networks:
+      - redis-cluster
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  {% endfor %}
+
+  # Redis Replica Nodes
+  {% if values.replicationFactor > 0 %}
+  {% for i in range(values.clusterSize) %}
+  {% for j in range(values.replicationFactor) %}
+  redis-replica-{{ i + 1 }}-{{ j + 1 }}:
+    image: redis:${{ values.redisVersion }}
+    container_name: redis-replica-{{ i + 1 }}-{{ j + 1 }}
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "{{ 7101 + (i * values.replicationFactor) + j }}:6379"
+      - "{{ 17101 + (i * values.replicationFactor) + j }}:16379"
+    volumes:
+      - ./config/redis-replica.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-replica-{{ i + 1 }}-{{ j + 1 }}-data:/data
+      {% if values.enableTLS %}
+      - ./certs:/tls:ro
+      {% endif %}
+    environment:
+      - REDIS_PORT=6379
+      - CLUSTER_ANNOUNCE_IP=redis-replica-{{ i + 1 }}-{{ j + 1 }}
+      {% if values.enableAuth %}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      {% endif %}
+    networks:
+      - redis-cluster
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - redis-master-{{ i + 1 }}
+
+  {% endfor %}
+  {% endfor %}
+  {% endif %}
+
+  # Redis Sentinel Nodes
+  {% if values.enableSentinel %}
+  {% for i in range(3) %}
+  redis-sentinel-{{ i + 1 }}:
+    image: redis:${{ values.redisVersion }}
+    container_name: redis-sentinel-{{ i + 1 }}
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    ports:
+      - "{{ 26379 + i }}:26379"
+    volumes:
+      - ./config/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+      - sentinel-{{ i + 1 }}-data:/data
+    environment:
+      - SENTINEL_QUORUM=${{ values.sentinelQuorum }}
+      {% if values.enableAuth %}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      {% endif %}
+    networks:
+      - redis-cluster
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      {% for j in range(values.clusterSize) %}
+      - redis-master-{{ j + 1 }}
+      {% endfor %}
+
+  {% endfor %}
+  {% endif %}
+
+  # Redis Exporter for Monitoring
+  {% if values.enableMonitoring %}
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis-master-1:6379
+      {% if values.enableAuth %}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      {% endif %}
+    networks:
+      - redis-cluster
+    restart: unless-stopped
+    depends_on:
+      {% for i in range(values.clusterSize) %}
+      - redis-master-{{ i + 1 }}
+      {% endfor %}
+
+  {% endif %}
+
+  # Redis Commander (Web UI)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS={% for i in range(values.clusterSize) %}redis-master-{{ i + 1 }}:redis-master-{{ i + 1 }}:6379{% if not loop.last %},{% endif %}{% endfor %}
+      {% if values.enableAuth %}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      {% endif %}
+    networks:
+      - redis-cluster
+    restart: unless-stopped
+    depends_on:
+      {% for i in range(values.clusterSize) %}
+      - redis-master-{{ i + 1 }}
+      {% endfor %}
+
+volumes:
+  {% for i in range(values.clusterSize) %}
+  redis-master-{{ i + 1 }}-data:
+    driver: local
+  {% endfor %}
+  {% if values.replicationFactor > 0 %}
+  {% for i in range(values.clusterSize) %}
+  {% for j in range(values.replicationFactor) %}
+  redis-replica-{{ i + 1 }}-{{ j + 1 }}-data:
+    driver: local
+  {% endfor %}
+  {% endfor %}
+  {% endif %}
+  {% if values.enableSentinel %}
+  {% for i in range(3) %}
+  sentinel-{{ i + 1 }}-data:
+    driver: local
+  {% endfor %}
+  {% endif %}
+
+networks:
+  redis-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,214 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+data:
+  postgresql.conf: |
+    # PostgreSQL Configuration for Kubernetes
+    listen_addresses = '*'
+    port = 5432
+    max_connections = ${{ values.maxConnections }}
+    
+    # Memory Settings
+    shared_buffers = '{{ (values.masterResources.memory | replace('Gi', '') | int * 1024 * 0.25) | int }}MB'
+    effective_cache_size = '{{ (values.masterResources.memory | replace('Gi', '') | int * 1024 * 0.75) | int }}MB'
+    maintenance_work_mem = '64MB'
+    work_mem = '4MB'
+    
+    # WAL Settings
+    wal_level = {% if values.enableReplication %}replica{% else %}minimal{% endif %}
+    max_wal_senders = {{ values.replicaCount + 2 }}
+    max_replication_slots = {{ values.replicaCount + 2 }}
+    wal_keep_size = '1GB'
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = off
+    log_min_messages = warning
+    log_min_duration_statement = ${{ values.logMinDuration }}
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    
+    # Performance
+    checkpoint_completion_target = 0.9
+    wal_buffers = '16MB'
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    
+    # Extensions
+    shared_preload_libraries = '{% for lib in values.sharedPreloadLibraries %}{{ lib }}{% if not loop.last %},{% endif %}{% endfor %}'
+    
+    # SSL Configuration
+    {% if values.enableSSL %}
+    ssl = on
+    ssl_cert_file = '/etc/ssl/certs/server.crt'
+    ssl_key_file = '/etc/ssl/private/server.key'
+    ssl_ca_file = '/etc/ssl/certs/ca.crt'
+    {% else %}
+    ssl = off
+    {% endif %}
+    
+    # Replication
+    {% if values.enableReplication %}
+    hot_standby = on
+    synchronous_standby_names = {% if values.synchronousReplication %}'*'{% else %}''{% endif %}
+    {% endif %}
+    
+    # Archiving
+    {% if values.enableWALArchiving %}
+    archive_mode = on
+    archive_command = '/usr/local/bin/archive_wal.sh %p %f'
+    archive_timeout = 300s
+    {% else %}
+    archive_mode = off
+    {% endif %}
+
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    all             all             ::1/128                 {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    all             all             10.0.0.0/8              {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    all             all             172.16.0.0/12           {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    all             all             192.168.0.0/16          {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    
+    {% if values.enableReplication %}
+    # Replication connections
+    host    replication     replicator      10.0.0.0/8              {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    replication     replicator      172.16.0.0/12           {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    host    replication     replicator      192.168.0.0/16          {% if values.enableSSL %}scram-sha-256{% else %}md5{% endif %}
+    {% endif %}
+
+  init-master.sql: |
+    -- Create replication user
+    {% if values.enableReplication %}
+    CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD :'replication_password';
+    {% endif %}
+    
+    -- Create application user
+    CREATE USER ${{ values.username }} WITH ENCRYPTED PASSWORD :'app_password';
+    GRANT ALL PRIVILEGES ON DATABASE ${{ values.databaseName }} TO ${{ values.username }};
+    
+    -- Install extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "hstore";
+    CREATE EXTENSION IF NOT EXISTS "citext";
+    
+    {% if 'pg_stat_statements' in values.sharedPreloadLibraries %}
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    {% endif %}
+    
+    {% if values.enableMonitoring %}
+    -- Create monitoring user
+    CREATE USER postgres_exporter WITH ENCRYPTED PASSWORD 'exporter_password';
+    GRANT CONNECT ON DATABASE ${{ values.databaseName }} TO postgres_exporter;
+    GRANT pg_monitor TO postgres_exporter;
+    {% endif %}
+    
+    -- Create health check table
+    CREATE TABLE IF NOT EXISTS health_check (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        status TEXT DEFAULT 'healthy',
+        message TEXT
+    );
+    
+    INSERT INTO health_check (message) VALUES ('PostgreSQL cluster initialized');
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-scripts
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+data:
+  backup.sh: |
+    #!/bin/bash
+    set -e
+    
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    BACKUP_NAME="${POSTGRES_DB}_${TIMESTAMP}"
+    BACKUP_DIR="/backups"
+    
+    mkdir -p "$BACKUP_DIR"
+    
+    echo "Starting backup: $BACKUP_NAME"
+    
+    PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
+        -h "$POSTGRES_HOST" \
+        -p "$POSTGRES_PORT" \
+        -U "$POSTGRES_USER" \
+        -d "$POSTGRES_DB" \
+        --verbose \
+        --no-password \
+        --format=custom \
+        --compress=9 \
+        --file="$BACKUP_DIR/${BACKUP_NAME}.dump"
+    
+    echo "Backup completed: $BACKUP_DIR/${BACKUP_NAME}.dump"
+    
+    # Cleanup old backups
+    find "$BACKUP_DIR" -name "*.dump" -type f -mtime +${{ values.backupRetention }} -delete
+    
+    echo "Backup process finished successfully"
+
+  restore.sh: |
+    #!/bin/bash
+    set -e
+    
+    if [ -z "$1" ]; then
+        echo "Usage: $0 <backup_file>"
+        exit 1
+    fi
+    
+    BACKUP_FILE="$1"
+    
+    if [ ! -f "$BACKUP_FILE" ]; then
+        echo "Backup file not found: $BACKUP_FILE"
+        exit 1
+    fi
+    
+    echo "Restoring from backup: $BACKUP_FILE"
+    
+    PGPASSWORD="$POSTGRES_PASSWORD" pg_restore \
+        -h "$POSTGRES_HOST" \
+        -p "$POSTGRES_PORT" \
+        -U "$POSTGRES_USER" \
+        -d "$POSTGRES_DB" \
+        --verbose \
+        --clean \
+        --if-exists \
+        --no-owner \
+        --no-privileges \
+        "$BACKUP_FILE"
+    
+    echo "Restore completed successfully"
+
+  health-check.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Check if PostgreSQL is accepting connections
+    pg_isready -h localhost -p 5432 -U postgres
+    
+    # Check if we can execute queries
+    psql -h localhost -U postgres -d ${{ values.databaseName }} -c "SELECT 1;" > /dev/null
+    
+    # Update health check table
+    psql -h localhost -U postgres -d ${{ values.databaseName }} -c \
+        "INSERT INTO health_check (message) VALUES ('Health check passed at $(date)');"
+    
+    echo "Health check passed"

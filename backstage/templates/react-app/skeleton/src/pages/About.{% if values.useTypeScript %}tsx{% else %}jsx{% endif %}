@@ -1,0 +1,164 @@
+{% if values.useTypeScript %}import React from 'react'
+{% else %}import React from 'react'
+{% endif %}
+{% if values.uiLibrary == "material-ui" %}import { Container, Typography, Box } from '@mui/material'
+{% elif values.uiLibrary == "chakra-ui" %}import { Container, Heading, Text, VStack } from '@chakra-ui/react'
+{% elif values.uiLibrary == "ant-design" %}import { Typography } from 'antd'
+const { Title, Paragraph } = Typography
+{% endif %}
+
+{% if values.useTypeScript %}const About: React.FC = () => {{% else %}const About = () => {{% endif %}
+  return (
+{% if values.uiLibrary == "material-ui" %}
+    <Container maxWidth="md">
+      <Box sx={{ textAlign: 'center', mt: 4 }}>
+        <Typography variant="h2" component="h1" gutterBottom>
+          About ${{ values.name }}
+        </Typography>
+        <Typography variant="body1" paragraph>
+          This is a modern React application built with the following technologies:
+        </Typography>
+        <Typography variant="body1" component="ul" sx={{ textAlign: 'left', maxWidth: 400, mx: 'auto' }}>
+          <li>React ${{ values.reactVersion }}</li>
+{% if values.useTypeScript %}
+          <li>TypeScript</li>
+{% endif %}
+          <li>{% if values.buildTool == "vite" %}Vite{% elif values.buildTool == "webpack" %}Webpack{% else %}Create React App{% endif %}</li>
+{% if values.includeRouter %}
+          <li>React Router</li>
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+          <li>{% if values.includeStateManagement == "zustand" %}Zustand{% elif values.includeStateManagement == "redux-toolkit" %}Redux Toolkit{% else %}Context API{% endif %}</li>
+{% endif %}
+{% if values.uiLibrary != "none" %}
+          <li>{% if values.uiLibrary == "tailwind" %}Tailwind CSS{% elif values.uiLibrary == "material-ui" %}Material-UI{% elif values.uiLibrary == "chakra-ui" %}Chakra UI{% elif values.uiLibrary == "ant-design" %}Ant Design{% endif %}</li>
+{% endif %}
+        </Typography>
+      </Box>
+    </Container>
+{% elif values.uiLibrary == "chakra-ui" %}
+    <Container maxW="container.md" centerContent>
+      <VStack spacing={6} textAlign="center" mt={8}>
+        <Heading as="h1" size="2xl">
+          About ${{ values.name }}
+        </Heading>
+        <Text fontSize="lg">
+          This is a modern React application built with the following technologies:
+        </Text>
+        <VStack spacing={2} align="start">
+          <Text>• React ${{ values.reactVersion }}</Text>
+{% if values.useTypeScript %}
+          <Text>• TypeScript</Text>
+{% endif %}
+          <Text>• {% if values.buildTool == "vite" %}Vite{% elif values.buildTool == "webpack" %}Webpack{% else %}Create React App{% endif %}</Text>
+{% if values.includeRouter %}
+          <Text>• React Router</Text>
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+          <Text>• {% if values.includeStateManagement == "zustand" %}Zustand{% elif values.includeStateManagement == "redux-toolkit" %}Redux Toolkit{% else %}Context API{% endif %}</Text>
+{% endif %}
+{% if values.uiLibrary != "none" %}
+          <Text>• {% if values.uiLibrary == "tailwind" %}Tailwind CSS{% elif values.uiLibrary == "material-ui" %}Material-UI{% elif values.uiLibrary == "chakra-ui" %}Chakra UI{% elif values.uiLibrary == "ant-design" %}Ant Design{% endif %}</Text>
+{% endif %}
+        </VStack>
+      </VStack>
+    </Container>
+{% elif values.uiLibrary == "ant-design" %}
+    <div style={{ textAlign: 'center', padding: '50px' }}>
+      <Title level={1}>About ${{ values.name }}</Title>
+      <Paragraph style={{ fontSize: '16px', marginBottom: '30px' }}>
+        This is a modern React application built with the following technologies:
+      </Paragraph>
+      <div style={{ textAlign: 'left', maxWidth: '400px', margin: '0 auto' }}>
+        <Paragraph>• React ${{ values.reactVersion }}</Paragraph>
+{% if values.useTypeScript %}
+        <Paragraph>• TypeScript</Paragraph>
+{% endif %}
+        <Paragraph>• {% if values.buildTool == "vite" %}Vite{% elif values.buildTool == "webpack" %}Webpack{% else %}Create React App{% endif %}</Paragraph>
+{% if values.includeRouter %}
+        <Paragraph>• React Router</Paragraph>
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+        <Paragraph>• {% if values.includeStateManagement == "zustand" %}Zustand{% elif values.includeStateManagement == "redux-toolkit" %}Redux Toolkit{% else %}Context API{% endif %}</Paragraph>
+{% endif %}
+{% if values.uiLibrary != "none" %}
+        <Paragraph>• {% if values.uiLibrary == "tailwind" %}Tailwind CSS{% elif values.uiLibrary == "material-ui" %}Material-UI{% elif values.uiLibrary == "chakra-ui" %}Chakra UI{% elif values.uiLibrary == "ant-design" %}Ant Design{% endif %}</Paragraph>
+{% endif %}
+      </div>
+    </div>
+{% elif values.uiLibrary == "tailwind" %}
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+            About ${{ values.name }}
+          </h1>
+          <p className="mt-4 text-lg text-gray-600">
+            This is a modern React application built with the following technologies:
+          </p>
+        </div>
+        
+        <div className="mt-8 bg-white shadow rounded-lg p-6">
+          <ul className="space-y-3">
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              React ${{ values.reactVersion }}
+            </li>
+{% if values.useTypeScript %}
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              TypeScript
+            </li>
+{% endif %}
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              {% if values.buildTool == "vite" %}Vite{% elif values.buildTool == "webpack" %}Webpack{% else %}Create React App{% endif %}
+            </li>
+{% if values.includeRouter %}
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              React Router
+            </li>
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              {% if values.includeStateManagement == "zustand" %}Zustand{% elif values.includeStateManagement == "redux-toolkit" %}Redux Toolkit{% else %}Context API{% endif %}
+            </li>
+{% endif %}
+{% if values.uiLibrary != "none" %}
+            <li className="flex items-center">
+              <span className="text-green-500 mr-2">✓</span>
+              {% if values.uiLibrary == "tailwind" %}Tailwind CSS{% elif values.uiLibrary == "material-ui" %}Material-UI{% elif values.uiLibrary == "chakra-ui" %}Chakra UI{% elif values.uiLibrary == "ant-design" %}Ant Design{% endif %}
+            </li>
+{% endif %}
+          </ul>
+        </div>
+      </div>
+    </div>
+{% else %}
+    <div className="about">
+      <h1>About ${{ values.name }}</h1>
+      <p>This is a modern React application built with the following technologies:</p>
+      <ul>
+        <li>React ${{ values.reactVersion }}</li>
+{% if values.useTypeScript %}
+        <li>TypeScript</li>
+{% endif %}
+        <li>{% if values.buildTool == "vite" %}Vite{% elif values.buildTool == "webpack" %}Webpack{% else %}Create React App{% endif %}</li>
+{% if values.includeRouter %}
+        <li>React Router</li>
+{% endif %}
+{% if values.includeStateManagement != "none" %}
+        <li>{% if values.includeStateManagement == "zustand" %}Zustand{% elif values.includeStateManagement == "redux-toolkit" %}Redux Toolkit{% else %}Context API{% endif %}</li>
+{% endif %}
+{% if values.uiLibrary != "none" %}
+        <li>{% if values.uiLibrary == "tailwind" %}Tailwind CSS{% elif values.uiLibrary == "material-ui" %}Material-UI{% elif values.uiLibrary == "chakra-ui" %}Chakra UI{% elif values.uiLibrary == "ant-design" %}Ant Design{% endif %}</li>
+{% endif %}
+      </ul>
+    </div>
+{% endif %}
+  )
+}
+
+export default About

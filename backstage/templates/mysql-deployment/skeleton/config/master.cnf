@@ -1,0 +1,120 @@
+# MySQL Master Configuration
+# Generated for ${{ values.name }} cluster
+
+[mysqld]
+# Server identification
+server-id = 1
+
+# Binary logging
+log-bin = mysql-bin
+binlog-format = ROW
+binlog-do-db = ${{ values.databaseName }}
+expire-logs-days = 7
+max-binlog-size = 100M
+
+# GTID
+gtid-mode = ON
+enforce-gtid-consistency = ON
+log-slave-updates = ON
+
+# Replication
+{% if values.replicationMode == 'semi-sync' %}
+rpl_semi_sync_master_enabled = 1
+rpl_semi_sync_master_timeout = 1000
+{% endif %}
+
+# Connection settings
+max-connections = ${{ values.maxConnections }}
+max-connect-errors = 1000000
+max-user-connections = 0
+
+# Character set
+character-set-server = ${{ values.charset }}
+collation-server = ${{ values.collation }}
+
+# InnoDB settings
+innodb-buffer-pool-size = {{ (values.masterResources.memory | replace('Gi', '') | int * 1024 * 0.7) | int }}M
+innodb-log-file-size = 256M
+innodb-log-buffer-size = 16M
+innodb-flush-log-at-trx-commit = 1
+innodb-file-per-table = 1
+innodb-flush-method = O_DIRECT
+
+# Query cache (disabled in MySQL 8.0+)
+{% if values.mysqlVersion.startswith('5.7') %}
+query-cache-type = 1
+query-cache-size = 64M
+{% endif %}
+
+# Slow query log
+{% if values.enableSlowQueryLog %}
+slow-query-log = 1
+slow-query-log-file = /var/lib/mysql/slow.log
+long-query-time = ${{ values.slowQueryTime }}
+log-queries-not-using-indexes = 1
+{% endif %}
+
+# General log
+general-log = 0
+general-log-file = /var/lib/mysql/general.log
+
+# Error log
+log-error = /var/lib/mysql/error.log
+
+# SSL Configuration
+{% if values.enableSSL %}
+ssl-ca = /etc/mysql/ssl/ca.pem
+ssl-cert = /etc/mysql/ssl/server-cert.pem
+ssl-key = /etc/mysql/ssl/server-key.pem
+require-secure-transport = ON
+{% endif %}
+
+# Performance Schema
+performance-schema = ON
+performance-schema-instrument = 'stage/%=ON'
+performance-schema-instrument = 'statement/%=ON'
+
+# Security
+local-infile = 0
+skip-show-database
+
+# MyISAM settings
+key-buffer-size = 32M
+myisam-recover-options = BACKUP,FORCE
+
+# Thread settings
+thread-cache-size = 50
+thread-stack = 256K
+
+# Table settings
+table-open-cache = 4000
+table-definition-cache = 2000
+
+# Temporary tables
+tmp-table-size = 64M
+max-heap-table-size = 64M
+
+# Sort and group
+sort-buffer-size = 2M
+read-buffer-size = 128K
+read-rnd-buffer-size = 256K
+join-buffer-size = 256K
+
+# Network
+max-allowed-packet = 64M
+interactive-timeout = 28800
+wait-timeout = 28800
+
+# Timezone
+default-time-zone = '+00:00'
+
+[mysql]
+default-character-set = ${{ values.charset }}
+
+[client]
+default-character-set = ${{ values.charset }}
+{% if values.enableSSL %}
+ssl-ca = /etc/mysql/ssl/ca.pem
+ssl-cert = /etc/mysql/ssl/client-cert.pem
+ssl-key = /etc/mysql/ssl/client-key.pem
+{% endif %}

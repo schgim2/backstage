@@ -1,0 +1,273 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ${{ values.name }}-master
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    app.kubernetes.io/instance: master
+spec:
+  serviceName: ${{ values.name }}-master-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: database
+      app.kubernetes.io/instance: master
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: ${{ values.name }}-cluster
+        app.kubernetes.io/instance: master
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9104"
+    spec:
+      {% if values.enablePodSecurityPolicy %}
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        runAsNonRoot: true
+      {% endif %}
+      containers:
+      - name: mysql
+        image: mysql:${{ values.mysqlVersion }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: mysql
+          containerPort: 3306
+          protocol: TCP
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: mysql-root-password
+        - name: MYSQL_DATABASE
+          value: ${{ values.databaseName }}
+        - name: MYSQL_USER
+          value: ${{ values.username }}
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: mysql-password
+        - name: MYSQL_REPLICATION_USER
+          value: replicator
+        - name: MYSQL_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: replication-password
+        args:
+        - --server-id=1
+        - --log-bin=mysql-bin
+        - --binlog-format=ROW
+        - --gtid-mode=ON
+        - --enforce-gtid-consistency=ON
+        - --log-slave-updates=ON
+        - --max-connections=${{ values.maxConnections }}
+        - --character-set-server=${{ values.charset }}
+        - --collation-server=${{ values.collation }}
+        {% if values.enableSSL %}
+        - --ssl-ca=/etc/mysql/ssl/ca.pem
+        - --ssl-cert=/etc/mysql/ssl/server-cert.pem
+        - --ssl-key=/etc/mysql/ssl/server-key.pem
+        - --require-secure-transport=ON
+        {% endif %}
+        {% if values.enableSlowQueryLog %}
+        - --slow-query-log=1
+        - --slow-query-log-file=/var/lib/mysql/slow.log
+        - --long-query-time=${{ values.slowQueryTime }}
+        - --log-queries-not-using-indexes=1
+        {% endif %}
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: mysql-config
+          mountPath: /etc/mysql/conf.d
+        - name: mysql-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        {% if values.enableSSL %}
+        - name: ssl-certs
+          mountPath: /etc/mysql/ssl
+          readOnly: true
+        {% endif %}
+        resources:
+          requests:
+            cpu: ${{ values.masterResources.cpu }}
+            memory: ${{ values.masterResources.memory }}
+          limits:
+            cpu: ${{ values.masterResources.cpu }}
+            memory: ${{ values.masterResources.memory }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        {% if values.enablePodSecurityPolicy %}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 999
+          capabilities:
+            drop:
+            - ALL
+        {% endif %}
+      
+      {% if values.enableMonitoring %}
+      - name: mysql-exporter
+        image: prom/mysqld-exporter:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: metrics
+          containerPort: 9104
+          protocol: TCP
+        env:
+        - name: DATA_SOURCE_NAME
+          value: "exporter:exporter_password@(localhost:3306)/${{ values.databaseName }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9104
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9104
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        {% if values.enablePodSecurityPolicy %}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        {% endif %}
+      {% endif %}
+      
+      volumes:
+      - name: mysql-config
+        configMap:
+          name: ${{ values.name }}-config
+          items:
+          - key: master.cnf
+            path: master.cnf
+      - name: mysql-scripts
+        configMap:
+          name: ${{ values.name }}-config
+          items:
+          - key: init-master.sh
+            path: init-master.sh
+          defaultMode: 0755
+      {% if values.enableSSL %}
+      - name: ssl-certs
+        secret:
+          secretName: ${{ values.name }}-ssl-certs
+          defaultMode: 0600
+      {% endif %}
+      
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}
+        app.kubernetes.io/component: database
+        app.kubernetes.io/instance: master
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: ${{ values.storageClass }}
+      resources:
+        requests:
+          storage: ${{ values.masterResources.storage }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-master
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    app.kubernetes.io/instance: master
+  {% if values.enableMonitoring %}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9104"
+    prometheus.io/path: "/metrics"
+  {% endif %}
+spec:
+  type: ClusterIP
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: 3306
+    protocol: TCP
+  {% if values.enableMonitoring %}
+  - name: metrics
+    port: 9104
+    targetPort: 9104
+    protocol: TCP
+  {% endif %}
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/instance: master
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-master-headless
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    app.kubernetes.io/instance: master
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: 3306
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/instance: master

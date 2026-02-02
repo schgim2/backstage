@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="${{ values.description }}" />
+    <title>${{ values.name }}</title>
+{% if values.includePWA %}
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#000000" />
+{% endif %}
+  </head>
+  <body>
+    <div id="root"></div>
+{% if values.buildTool == "vite" %}
+    <script type="module" src="/src/main.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}"></script>
+{% elif values.buildTool == "webpack" %}
+    <script src="/src/index.{% if values.useTypeScript %}tsx{% else %}jsx{% endif %}"></script>
+{% endif %}
+  </body>
+</html>

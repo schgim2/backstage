@@ -1,0 +1,200 @@
+{% if values.enableBackup %}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ${{ values.name }}-backup
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  schedule: "${{ values.backupSchedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${{ values.name }}
+            app.kubernetes.io/component: backup
+            app.kubernetes.io/part-of: ${{ values.name }}-cluster
+        spec:
+          restartPolicy: OnFailure
+          {% if values.enablePodSecurityPolicy %}
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            runAsNonRoot: true
+          {% endif %}
+          containers:
+          - name: backup
+            image: postgres:${{ values.postgresVersion }}
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: POSTGRES_HOST
+              value: ${{ values.name }}-master
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: ${{ values.databaseName }}
+            - name: POSTGRES_USER
+              value: ${{ values.username }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-credentials
+                  key: app-password
+            - name: BACKUP_RETENTION
+              value: "${{ values.backupRetention }}"
+            - name: BACKUP_STORAGE
+              value: ${{ values.backupStorage }}
+            {% if values.backupStorage == 's3' %}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: aws-secret-access-key
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: s3-bucket
+            {% elif values.backupStorage == 'gcs' %}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /credentials/service-account.json
+            - name: GCS_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: gcs-bucket
+            {% elif values.backupStorage == 'azure' %}
+            - name: AZURE_STORAGE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: azure-storage-account
+            - name: AZURE_STORAGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ values.name }}-backup-credentials
+                  key: azure-storage-key
+            {% endif %}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              # Install required tools based on storage type
+              {% if values.backupStorage == 's3' %}
+              apt-get update && apt-get install -y awscli
+              {% elif values.backupStorage == 'gcs' %}
+              apt-get update && apt-get install -y curl
+              curl https://sdk.cloud.google.com | bash
+              source /root/google-cloud-sdk/path.bash.inc
+              {% elif values.backupStorage == 'azure' %}
+              apt-get update && apt-get install -y curl
+              curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+              {% endif %}
+              
+              # Execute backup script
+              /scripts/backup.sh
+            volumeMounts:
+            - name: backup-scripts
+              mountPath: /scripts
+            - name: backup-storage
+              mountPath: /backups
+            {% if values.backupStorage == 'gcs' %}
+            - name: gcs-credentials
+              mountPath: /credentials
+              readOnly: true
+            {% endif %}
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            {% if values.enablePodSecurityPolicy %}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              runAsNonRoot: true
+              runAsUser: 999
+              capabilities:
+                drop:
+                - ALL
+            {% endif %}
+          volumes:
+          - name: backup-scripts
+            configMap:
+              name: ${{ values.name }}-scripts
+              defaultMode: 0755
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: ${{ values.name }}-backup-storage
+          {% if values.backupStorage == 'gcs' %}
+          - name: gcs-credentials
+            secret:
+              secretName: ${{ values.name }}-backup-credentials
+              items:
+              - key: service-account.json
+                path: service-account.json
+          {% endif %}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${{ values.name }}-backup-storage
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: ${{ values.storageClass }}
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+# Backup credentials secret template
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${{ values.name }}-backup-credentials
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+type: Opaque
+data:
+  {% if values.backupStorage == 's3' %}
+  # Replace with actual base64 encoded values
+  aws-access-key-id: QUTJQUFBQUFBQUFBQUFBQUE=
+  aws-secret-access-key: YWJjZGVmZ2hpams=
+  s3-bucket: bXktYmFja3VwLWJ1Y2tldA==
+  {% elif values.backupStorage == 'gcs' %}
+  # Replace with actual base64 encoded service account JSON
+  service-account.json: ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAieW91ci1wcm9qZWN0IiwKICAicHJpdmF0ZV9rZXlfaWQiOiAiYWJjZGVmIiwKICAicHJpdmF0ZV9rZXkiOiAiLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXG4uLi5cbi0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0iLAogICJjbGllbnRfZW1haWwiOiAieW91ci1zZXJ2aWNlLWFjY291bnRAeW91ci1wcm9qZWN0LmlhbS5nc2VydmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEyMzQ1Njc4OTAiLAogICJhdXRoX3VyaSI6ICJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsCiAgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsCiAgImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9vYXV0aDIvdjEvY2VydHMiLAogICJjbGllbnRfeDUwOV9jZXJ0X3VybCI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9yb2JvdC92MS9tZXRhZGF0YS94NTA5L3lvdXItc2VydmljZS1hY2NvdW50JTQweW91ci1wcm9qZWN0LmlhbS5nc2VydmljZWFjY291bnQuY29tIgp9
+  gcs-bucket: bXktYmFja3VwLWJ1Y2tldA==
+  {% elif values.backupStorage == 'azure' %}
+  # Replace with actual base64 encoded values
+  azure-storage-account: bXlzdG9yYWdlYWNjb3VudA==
+  azure-storage-key: YWJjZGVmZ2hpams=
+  {% endif %}
+{% endif %}

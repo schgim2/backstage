@@ -1,0 +1,25 @@
+site_name: Redis Cluster Deployment Template
+site_description: >-
+  Complete Redis cluster deployment template with high availability and
+  monitoring
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Deployment: deployment.md
+  - Monitoring: monitoring.md
+  - Troubleshooting: troubleshooting.md
+theme:
+  name: material
+  palette:
+    primary: red
+    accent: red
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

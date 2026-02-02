@@ -1,0 +1,277 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: react-app
+  title: Modern React Application
+  description: Create a modern React application with TypeScript, Vite, and best practices
+  tags:
+    - react
+    - typescript
+    - vite
+    - frontend
+    - spa
+    - javascript
+    - web
+    - ui
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: frontend-team
+  type: website
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+        - description
+        - repoUrl
+      properties:
+        name:
+          type: string
+          title: Application Name
+          description: Unique name for your React application
+          pattern: ^[a-zA-Z][-a-zA-Z0-9]*[a-zA-Z0-9]$
+          ui:field: EntityNamePicker
+        description:
+          type: string
+          title: Description
+          description: Brief description of your React application
+          ui:options:
+            rows: 3
+        repoUrl:
+          type: string
+          title: Repository Location
+          description: Choose a location to create the React app repository
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+    - title: React Configuration
+      properties:
+        reactVersion:
+          type: string
+          title: React Version
+          description: React version to use
+          default: "18"
+          enum:
+            - "18"
+            - "17"
+        buildTool:
+          type: string
+          title: Build Tool
+          description: Build tool for the React application
+          default: "vite"
+          enum:
+            - "vite"
+            - "webpack"
+            - "create-react-app"
+        useTypeScript:
+          type: boolean
+          title: Use TypeScript
+          description: Enable TypeScript support
+          default: true
+        includeRouter:
+          type: boolean
+          title: Include React Router
+          description: Add React Router for navigation
+          default: true
+        includeStateManagement:
+          type: string
+          title: State Management
+          description: Choose state management solution
+          default: "zustand"
+          enum:
+            - "none"
+            - "zustand"
+            - "redux-toolkit"
+            - "context-api"
+
+    - title: UI and Styling
+      properties:
+        uiLibrary:
+          type: string
+          title: UI Component Library
+          description: Choose a UI component library
+          default: "tailwind"
+          enum:
+            - "none"
+            - "tailwind"
+            - "material-ui"
+            - "chakra-ui"
+            - "ant-design"
+        includePWA:
+          type: boolean
+          title: Progressive Web App
+          description: Enable PWA features
+          default: false
+        includeStorybook:
+          type: boolean
+          title: Include Storybook
+          description: Add Storybook for component development
+          default: false
+
+    - title: Development Tools
+      properties:
+        includeESLint:
+          type: boolean
+          title: Include ESLint
+          description: Add ESLint for code linting
+          default: true
+        includePrettier:
+          type: boolean
+          title: Include Prettier
+          description: Add Prettier for code formatting
+          default: true
+        includeHusky:
+          type: boolean
+          title: Include Husky
+          description: Add Husky for Git hooks
+          default: true
+        testingFramework:
+          type: string
+          title: Testing Framework
+          description: Choose testing framework
+          default: "vitest"
+          enum:
+            - "vitest"
+            - "jest"
+            - "none"
+        includeE2E:
+          type: boolean
+          title: Include E2E Testing
+          description: Add Playwright for end-to-end testing
+          default: false
+
+    - title: Deployment Options
+      properties:
+        deploymentTarget:
+          type: string
+          title: Deployment Target
+          description: Choose deployment platform
+          default: "vercel"
+          enum:
+            - "vercel"
+            - "netlify"
+            - "github-pages"
+            - "docker"
+            - "none"
+        includeDocker:
+          type: boolean
+          title: Include Docker
+          description: Add Docker configuration
+          default: false
+        includeCI:
+          type: boolean
+          title: Include CI/CD
+          description: Add GitHub Actions workflow
+          default: true
+
+    - title: Features
+      properties:
+        includeAuth:
+          type: boolean
+          title: Include Authentication
+          description: Add authentication setup
+          default: false
+        authProvider:
+          type: string
+          title: Authentication Provider
+          description: Choose authentication provider
+          default: "auth0"
+          enum:
+            - "auth0"
+            - "firebase"
+            - "supabase"
+            - "custom"
+          ui:options:
+            condition:
+              properties:
+                includeAuth:
+                  const: true
+        includeAPI:
+          type: boolean
+          title: Include API Integration
+          description: Add API client setup
+          default: true
+        apiClient:
+          type: string
+          title: API Client
+          description: Choose API client library
+          default: "axios"
+          enum:
+            - "axios"
+            - "fetch"
+            - "react-query"
+            - "swr"
+          ui:options:
+            condition:
+              properties:
+                includeAPI:
+                  const: true
+
+  steps:
+    - id: fetch-base
+      name: Fetch Base Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          reactVersion: ${{ parameters.reactVersion }}
+          buildTool: ${{ parameters.buildTool }}
+          useTypeScript: ${{ parameters.useTypeScript }}
+          includeRouter: ${{ parameters.includeRouter }}
+          includeStateManagement: ${{ parameters.includeStateManagement }}
+          uiLibrary: ${{ parameters.uiLibrary }}
+          includePWA: ${{ parameters.includePWA }}
+          includeStorybook: ${{ parameters.includeStorybook }}
+          includeESLint: ${{ parameters.includeESLint }}
+          includePrettier: ${{ parameters.includePrettier }}
+          includeHusky: ${{ parameters.includeHusky }}
+          testingFramework: ${{ parameters.testingFramework }}
+          includeE2E: ${{ parameters.includeE2E }}
+          deploymentTarget: ${{ parameters.deploymentTarget }}
+          includeDocker: ${{ parameters.includeDocker }}
+          includeCI: ${{ parameters.includeCI }}
+          includeAuth: ${{ parameters.includeAuth }}
+          authProvider: ${{ parameters.authProvider }}
+          includeAPI: ${{ parameters.includeAPI }}
+          apiClient: ${{ parameters.apiClient }}
+          owner: ${{ parameters.repoUrl | parseRepoUrl | pick("owner") }}
+          repo: ${{ parameters.repoUrl | parseRepoUrl | pick("repo") }}
+
+    - id: publish
+      name: Publish to Repository
+      action: publish:github
+      input:
+        allowedHosts:
+          - github.com
+          - gitlab.com
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: "Initial React app setup"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        icon: github
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: View Application
+        url: https://${{ parameters.name }}.vercel.app
+        icon: web
+      - title: Development Guide
+        url: ${{ steps.publish.output.remoteUrl }}/blob/main/README.md
+        icon: docs

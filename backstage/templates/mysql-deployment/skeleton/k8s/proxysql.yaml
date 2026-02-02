@@ -1,0 +1,292 @@
+{% if values.enableProxySQL %}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${{ values.name }}-proxysql-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: proxysql
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+data:
+  proxysql.cnf: |
+    # ProxySQL Configuration
+    # Generated for ${{ values.name }} cluster
+
+    datadir="/var/lib/proxysql"
+    errorlog="/var/lib/proxysql/proxysql.log"
+
+    admin_variables=
+    {
+        admin_credentials="admin:admin;cluster1:secret1"
+        mysql_ifaces="0.0.0.0:6032"
+        refresh_interval=2000
+        debug=true
+        cluster_username="cluster1"
+        cluster_password="secret1"
+        cluster_check_interval_ms=200
+        cluster_check_status_frequency=100
+        cluster_mysql_query_rules_save_to_disk=true
+        cluster_mysql_servers_save_to_disk=true
+        cluster_mysql_users_save_to_disk=true
+        cluster_proxysql_servers_save_to_disk=true
+        cluster_mysql_query_rules_diffs_before_sync=3
+        cluster_mysql_servers_diffs_before_sync=3
+        cluster_mysql_users_diffs_before_sync=3
+        cluster_proxysql_servers_diffs_before_sync=3
+    }
+
+    mysql_variables=
+    {
+        threads=4
+        max_connections=2048
+        default_query_delay=0
+        default_query_timeout=36000000
+        have_compress=true
+        poll_timeout=2000
+        interfaces="0.0.0.0:6033"
+        default_schema="information_schema"
+        stacksize=1048576
+        server_version="8.0.25"
+        connect_timeout_server=3000
+        monitor_username="monitor"
+        monitor_password="monitor"
+        monitor_history=600000
+        monitor_connect_interval=60000
+        monitor_ping_interval=10000
+        monitor_read_only_interval=1500
+        monitor_read_only_timeout=500
+        ping_interval_server_msec=120000
+        ping_timeout_server=500
+        commands_stats=true
+        sessions_sort=true
+        connect_retries_on_failure=10
+    }
+
+    # MySQL Servers Configuration
+    mysql_servers =
+    (
+        # Master server (read/write)
+        {
+            address="${{ values.name }}-master"
+            port=3306
+            hostgroup=0
+            weight=1000
+            compression=0
+            max_connections=200
+            max_replication_lag=10
+            use_ssl={% if values.enableSSL %}1{% else %}0{% endif %}
+            max_latency_ms=1000
+            comment="MySQL Master"
+        }
+    {% if values.enableReplication %}
+    {% for i in range(values.replicaCount) %}
+        # Replica server {{ i }} (read-only)
+        ,{
+            address="${{ values.name }}-replica-{{ i }}"
+            port=3306
+            hostgroup=1
+            weight=900
+            compression=0
+            max_connections=200
+            max_replication_lag=10
+            use_ssl={% if values.enableSSL %}1{% else %}0{% endif %}
+            max_latency_ms=1000
+            comment="MySQL Replica {{ i }}"
+        }
+    {% endfor %}
+    {% endif %}
+    )
+
+    # MySQL Users Configuration
+    mysql_users =
+    (
+        {
+            username="${{ values.username }}"
+            password="${MYSQL_PASSWORD}"
+            default_hostgroup=0
+            max_connections=200
+            default_schema="${{ values.databaseName }}"
+            active=1
+            comment="Application User"
+        }
+        ,{
+            username="root"
+            password="${MYSQL_ROOT_PASSWORD}"
+            default_hostgroup=0
+            max_connections=20
+            default_schema="${{ values.databaseName }}"
+            active=1
+            comment="Root User"
+        }
+    )
+
+    # Query Rules Configuration
+    mysql_query_rules =
+    (
+        # Route SELECT queries to read replicas
+        {
+            rule_id=1
+            active=1
+            match_pattern="^SELECT.*FOR UPDATE$"
+            destination_hostgroup=0
+            apply=1
+            comment="Route SELECT FOR UPDATE to master"
+        }
+        ,{
+            rule_id=2
+            active=1
+            match_pattern="^SELECT"
+            destination_hostgroup=1
+            apply=1
+            comment="Route SELECT queries to replicas"
+        }
+        # Route all other queries to master
+        ,{
+            rule_id=3
+            active=1
+            match_pattern=".*"
+            destination_hostgroup=0
+            apply=1
+            comment="Route all other queries to master"
+        }
+    )
+
+    # MySQL Replication Hostgroups
+    mysql_replication_hostgroups =
+    (
+        {
+            writer_hostgroup=0
+            reader_hostgroup=1
+            check_type="read_only"
+            comment="MySQL Replication Hostgroups"
+        }
+    )
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}-proxysql
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: proxysql
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: proxysql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}
+        app.kubernetes.io/component: proxysql
+        app.kubernetes.io/part-of: ${{ values.name }}-cluster
+    spec:
+      {% if values.enablePodSecurityPolicy %}
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        runAsNonRoot: true
+      {% endif %}
+      containers:
+      - name: proxysql
+        image: proxysql/proxysql:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: mysql
+          containerPort: 6033
+          protocol: TCP
+        - name: admin
+          containerPort: 6032
+          protocol: TCP
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: mysql-root-password
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${{ values.name }}-credentials
+              key: mysql-password
+        volumeMounts:
+        - name: proxysql-config
+          mountPath: /etc/proxysql.cnf
+          subPath: proxysql.cnf
+        - name: proxysql-data
+          mountPath: /var/lib/proxysql
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - mysql -h 127.0.0.1 -P 6032 -u admin -padmin -e "SELECT 1"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - mysql -h 127.0.0.1 -P 6033 -u ${{ values.username }} -p$MYSQL_PASSWORD -e "SELECT 1"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        {% if values.enablePodSecurityPolicy %}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 999
+          capabilities:
+            drop:
+            - ALL
+        {% endif %}
+      volumes:
+      - name: proxysql-config
+        configMap:
+          name: ${{ values.name }}-proxysql-config
+      - name: proxysql-data
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-proxysql
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: proxysql
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  type: ClusterIP
+  ports:
+  - name: mysql
+    port: 6033
+    targetPort: 6033
+    protocol: TCP
+  - name: admin
+    port: 6032
+    targetPort: 6032
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: proxysql
+{% endif %}

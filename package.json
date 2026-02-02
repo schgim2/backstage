@@ -1,0 +1,45 @@
+{
+  "name": "backstage-template-generator",
+  "version": "1.0.0",
+  "description": "AI-powered system for generating Backstage templates through intent-driven development",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:property": "jest --testNamePattern='Property'",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "backstage",
+    "template",
+    "generator",
+    "idp",
+    "vibe-coding",
+    "intent-driven"
+  ],
+  "author": "Kiro AI",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.0",
+    "@typescript-eslint/eslint-plugin": "^5.57.0",
+    "@typescript-eslint/parser": "^5.57.0",
+    "eslint": "^8.37.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "fast-check": "^3.8.0",
+    "jest": "^29.5.0",
+    "prettier": "^2.8.7",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "yaml": "^2.2.0",
+    "zod": "^3.21.0"
+  }
+}

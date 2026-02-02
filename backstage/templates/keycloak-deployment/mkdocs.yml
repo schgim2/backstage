@@ -1,0 +1,27 @@
+site_name: Keycloak Identity Management Template
+site_description: >-
+  Enterprise-grade Keycloak deployment template with HA, monitoring, and custom
+  themes
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - High Availability: high-availability.md
+  - Database Setup: database-setup.md
+  - Custom Themes: custom-themes.md
+  - Monitoring: monitoring.md
+  - Security: security.md
+  - Troubleshooting: troubleshooting.md
+theme:
+  name: material
+  palette:
+    primary: blue
+    accent: blue
+plugins:
+  - search
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

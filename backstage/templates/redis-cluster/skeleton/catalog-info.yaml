@@ -1,0 +1,23 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    github.com/project-slug: ${{ values.owner }}/${{ values.repo }}
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - redis
+    - cluster
+    - database
+    - cache
+    - container
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: data-infrastructure
+  dependsOn:
+    - resource:redis-cluster-storage
+  providesApis:
+    - redis-cluster-api

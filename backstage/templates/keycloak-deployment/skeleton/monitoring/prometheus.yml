@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "keycloak-rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Keycloak metrics
+  - job_name: 'keycloak'
+    static_configs:
+      - targets: ['keycloak:9990']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # PostgreSQL metrics (if using postgres_exporter)
+  {% if values.databaseType == "postgresql" and values.enableMonitoring %}
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgresql-exporter:9187']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+  {% endif %}
+
+  # Node metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

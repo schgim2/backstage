@@ -1,0 +1,335 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: keycloak-deployment
+  title: Red Hat Keycloak Identity and Access Management
+  description: Deploy a production-ready Keycloak instance with high availability, database persistence, and enterprise features
+  tags:
+    - keycloak
+    - identity
+    - authentication
+    - authorization
+    - sso
+    - oidc
+    - saml
+    - security
+    - iam
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  type: service
+  parameters:
+    - title: Basic Information
+      required:
+        - name
+        - description
+        - repoUrl
+      properties:
+        name:
+          type: string
+          title: Service Name
+          description: Unique name for your Keycloak deployment
+          pattern: ^[a-zA-Z][-a-zA-Z0-9]*[a-zA-Z0-9]$
+          ui:field: EntityNamePicker
+        description:
+          type: string
+          title: Description
+          description: Brief description of your Keycloak deployment
+          ui:options:
+            rows: 3
+        repoUrl:
+          type: string
+          title: Repository Location
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+              - gitlab.com
+
+    - title: Keycloak Configuration
+      properties:
+        keycloakVersion:
+          type: string
+          title: Keycloak Version
+          description: Keycloak version to deploy
+          default: "23.0"
+          enum:
+            - "23.0"
+            - "22.0"
+            - "21.1"
+            - "20.0"
+        deploymentMode:
+          type: string
+          title: Deployment Mode
+          description: Keycloak deployment mode
+          default: "production"
+          enum:
+            - "development"
+            - "production"
+            - "ha-cluster"
+        replicas:
+          type: integer
+          title: Number of Replicas
+          description: Number of Keycloak instances (minimum 2 for HA)
+          default: 2
+          minimum: 1
+          maximum: 10
+        adminUser:
+          type: string
+          title: Admin Username
+          description: Keycloak admin username
+          default: "admin"
+        enableMetrics:
+          type: boolean
+          title: Enable Metrics
+          description: Enable Prometheus metrics collection
+          default: true
+
+    - title: Database Configuration
+      properties:
+        databaseType:
+          type: string
+          title: Database Type
+          description: Database backend for Keycloak
+          default: "postgresql"
+          enum:
+            - "postgresql"
+            - "mysql"
+            - "mariadb"
+            - "oracle"
+            - "mssql"
+        databaseMode:
+          type: string
+          title: Database Mode
+          description: Database deployment mode
+          default: "managed"
+          enum:
+            - "managed"
+            - "external"
+            - "embedded-dev"
+        databaseSize:
+          type: string
+          title: Database Storage Size
+          description: Size of database persistent volume
+          default: "20Gi"
+        enableDatabaseHA:
+          type: boolean
+          title: Enable Database High Availability
+          description: Deploy database in HA mode (PostgreSQL cluster)
+          default: false
+        databaseBackup:
+          type: boolean
+          title: Enable Database Backup
+          description: Enable automated database backups
+          default: true
+
+    - title: SSL/TLS and Security
+      properties:
+        enableSSL:
+          type: boolean
+          title: Enable SSL/TLS
+          description: Enable HTTPS with SSL certificates
+          default: true
+        sslProvider:
+          type: string
+          title: SSL Certificate Provider
+          description: How to obtain SSL certificates
+          default: "cert-manager"
+          enum:
+            - "cert-manager"
+            - "manual"
+            - "self-signed"
+        domain:
+          type: string
+          title: Domain Name
+          description: Primary domain name for Keycloak
+          pattern: ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$
+        enableVault:
+          type: boolean
+          title: Enable HashiCorp Vault Integration
+          description: Use Vault for secrets management
+          default: false
+        enableNetworkPolicies:
+          type: boolean
+          title: Enable Network Policies
+          description: Create Kubernetes network policies for security
+          default: true
+
+    - title: Deployment Options
+      properties:
+        deploymentType:
+          type: string
+          title: Deployment Type
+          description: Choose deployment platform
+          default: "kubernetes"
+          enum:
+            - "kubernetes"
+            - "docker-compose"
+            - "both"
+        namespace:
+          type: string
+          title: Kubernetes Namespace
+          description: Kubernetes namespace for deployment
+          default: "keycloak"
+        storageClass:
+          type: string
+          title: Storage Class
+          description: Storage class for persistent volumes
+          default: "standard"
+        ingressClass:
+          type: string
+          title: Ingress Class
+          description: Kubernetes ingress class
+          default: "nginx"
+
+    - title: Authentication Providers
+      properties:
+        enableLDAP:
+          type: boolean
+          title: Enable LDAP Integration
+          description: Configure LDAP/Active Directory integration
+          default: false
+        enableSAML:
+          type: boolean
+          title: Enable SAML Identity Providers
+          description: Configure SAML identity providers
+          default: false
+        enableOIDC:
+          type: boolean
+          title: Enable OIDC Identity Providers
+          description: Configure OpenID Connect identity providers
+          default: true
+        enableSocialLogin:
+          type: boolean
+          title: Enable Social Login
+          description: Configure social login providers (Google, GitHub, etc.)
+          default: false
+
+    - title: Features and Extensions
+      properties:
+        enableThemes:
+          type: boolean
+          title: Enable Custom Themes
+          description: Include custom theme support
+          default: true
+        enableEventListeners:
+          type: boolean
+          title: Enable Event Listeners
+          description: Configure event listeners for auditing
+          default: true
+        enableUserFederation:
+          type: boolean
+          title: Enable User Federation
+          description: Configure user federation providers
+          default: false
+        enableAdminAPI:
+          type: boolean
+          title: Enable Admin REST API
+          description: Enable Keycloak Admin REST API
+          default: true
+
+    - title: Monitoring and Logging
+      properties:
+        enableMonitoring:
+          type: boolean
+          title: Enable Monitoring
+          description: Include Prometheus monitoring setup
+          default: true
+        enableLogging:
+          type: boolean
+          title: Enable Centralized Logging
+          description: Configure log aggregation
+          default: true
+        logLevel:
+          type: string
+          title: Log Level
+          description: Keycloak log level
+          default: "INFO"
+          enum:
+            - "DEBUG"
+            - "INFO"
+            - "WARN"
+            - "ERROR"
+        enableAuditLogs:
+          type: boolean
+          title: Enable Audit Logs
+          description: Enable detailed audit logging
+          default: true
+
+  steps:
+    - id: fetch-base
+      name: Fetch Base Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          keycloakVersion: ${{ parameters.keycloakVersion }}
+          deploymentMode: ${{ parameters.deploymentMode }}
+          replicas: ${{ parameters.replicas }}
+          adminUser: ${{ parameters.adminUser }}
+          enableMetrics: ${{ parameters.enableMetrics }}
+          databaseType: ${{ parameters.databaseType }}
+          databaseMode: ${{ parameters.databaseMode }}
+          databaseSize: ${{ parameters.databaseSize }}
+          enableDatabaseHA: ${{ parameters.enableDatabaseHA }}
+          databaseBackup: ${{ parameters.databaseBackup }}
+          enableSSL: ${{ parameters.enableSSL }}
+          sslProvider: ${{ parameters.sslProvider }}
+          domain: ${{ parameters.domain }}
+          enableVault: ${{ parameters.enableVault }}
+          enableNetworkPolicies: ${{ parameters.enableNetworkPolicies }}
+          deploymentType: ${{ parameters.deploymentType }}
+          namespace: ${{ parameters.namespace }}
+          storageClass: ${{ parameters.storageClass }}
+          ingressClass: ${{ parameters.ingressClass }}
+          enableLDAP: ${{ parameters.enableLDAP }}
+          enableSAML: ${{ parameters.enableSAML }}
+          enableOIDC: ${{ parameters.enableOIDC }}
+          enableSocialLogin: ${{ parameters.enableSocialLogin }}
+          enableThemes: ${{ parameters.enableThemes }}
+          enableEventListeners: ${{ parameters.enableEventListeners }}
+          enableUserFederation: ${{ parameters.enableUserFederation }}
+          enableAdminAPI: ${{ parameters.enableAdminAPI }}
+          enableMonitoring: ${{ parameters.enableMonitoring }}
+          enableLogging: ${{ parameters.enableLogging }}
+          logLevel: ${{ parameters.logLevel }}
+          enableAuditLogs: ${{ parameters.enableAuditLogs }}
+          owner: ${{ parameters.repoUrl | parseRepoUrl | pick("owner") }}
+          repo: ${{ parameters.repoUrl | parseRepoUrl | pick("repo") }}
+
+    - id: publish
+      name: Publish to Repository
+      action: publish:github
+      input:
+        allowedHosts:
+          - github.com
+          - gitlab.com
+        description: ${{ parameters.description }}
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        gitCommitMessage: "Initial Keycloak deployment setup"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        icon: github
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: View Deployment Guide
+        url: ${{ steps.publish.output.remoteUrl }}/blob/main/README.md
+        icon: docs
+      - title: Keycloak Admin Console
+        url: https://${{ parameters.domain }}/admin
+        icon: web

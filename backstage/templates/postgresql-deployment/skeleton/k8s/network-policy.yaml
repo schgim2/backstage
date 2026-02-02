@@ -1,0 +1,220 @@
+{% if values.enableNetworkPolicies %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: database
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow connections from application pods
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: application
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: application
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Allow connections from monitoring
+  {% if values.enableMonitoring %}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: prometheus
+    ports:
+    - protocol: TCP
+      port: 9187
+  {% endif %}
+  
+  # Allow connections from backup jobs
+  {% if values.enableBackup %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: backup
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  
+  # Allow connections from pgAdmin
+  {% if values.enablePgAdmin %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: pgadmin
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  
+  # Allow replication traffic between PostgreSQL instances
+  {% if values.enableReplication %}
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow NTP synchronization
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 123
+  
+  # Allow replication traffic to other PostgreSQL instances
+  {% if values.enableReplication %}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  {% endif %}
+  
+  # Allow backup uploads to cloud storage
+  {% if values.enableBackup and values.backupStorage != 'local' %}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for cloud storage APIs
+    - protocol: TCP
+      port: 80   # HTTP for cloud storage APIs
+  {% endif %}
+
+---
+# Network policy for backup jobs
+{% if values.enableBackup %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-backup-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: backup
+  policyTypes:
+  - Egress
+  egress:
+  # Allow connections to PostgreSQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow cloud storage uploads
+  {% if values.backupStorage != 'local' %}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS
+    - protocol: TCP
+      port: 80   # HTTP
+  {% endif %}
+{% endif %}
+
+---
+# Network policy for monitoring
+{% if values.enableMonitoring %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-monitoring-network-policy
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: ${{ values.name }}-cluster
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}
+      app.kubernetes.io/component: monitoring
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow Prometheus to scrape metrics
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: prometheus
+    ports:
+    - protocol: TCP
+      port: 9187
+  
+  egress:
+  # Allow connections to PostgreSQL for metrics collection
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ${{ values.name }}
+          app.kubernetes.io/component: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+{% endif %}
+{% endif %}

@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-config
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: redis-cluster
+    app.kubernetes.io/instance: ${{ values.name }}
+data:
+  redis.conf: |
+    # Redis Cluster Configuration
+    port 6379
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    appendonly yes
+    appendfsync everysec
+    
+    # Memory Management
+    maxmemory-policy allkeys-lru
+    
+    # Network
+    tcp-keepalive 300
+    timeout 0
+    tcp-backlog 511
+    
+    # Logging
+    loglevel ${{ values.logLevel }}
+    logfile ""
+    
+    # Security
+    {% if values.enableAuth %}
+    requirepass ${REDIS_PASSWORD}
+    masterauth ${REDIS_PASSWORD}
+    {% endif %}
+    
+    {% if values.enableTLS %}
+    # TLS Configuration
+    tls-port 6380
+    port 0
+    tls-cert-file /tls/redis.crt
+    tls-key-file /tls/redis.key
+    tls-ca-cert-file /tls/ca.crt
+    tls-cluster yes
+    tls-replication yes
+    {% endif %}
+    
+    # Performance Tuning
+    save 900 1
+    save 300 10
+    save 60 10000
+    
+    # Cluster
+    cluster-require-full-coverage no
+    
+  {% if values.enableSentinel %}
+  sentinel.conf: |
+    # Sentinel Configuration
+    port 26379
+    sentinel monitor mymaster redis-cluster-0.${{ values.name }}-headless.${{ values.namespace }}.svc.cluster.local 6379 ${{ values.sentinelQuorum }}
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel parallel-syncs mymaster 1
+    sentinel failover-timeout mymaster 10000
+    
+    {% if values.enableAuth %}
+    sentinel auth-pass mymaster ${REDIS_PASSWORD}
+    {% endif %}
+    
+    # Logging
+    loglevel ${{ values.logLevel }}
+    logfile ""
+  {% endif %}
