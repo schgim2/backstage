@@ -12,6 +12,7 @@ metadata:
     - microservice
   annotations:
     backstage.io/techdocs-ref: dir:.
+    backstage.io/source-location: url:file:///Users/gimseungcheol/workspace/bacstage_workspace/backstage/templates/spring-boot-app
 spec:
   owner: platform-team
   type: service

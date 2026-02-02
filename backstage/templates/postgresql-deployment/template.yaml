@@ -14,6 +14,7 @@ metadata:
     - kubernetes
   annotations:
     backstage.io/techdocs-ref: dir:.
+    backstage.io/source-location: url:file:///Users/gimseungcheol/workspace/bacstage_workspace/backstage/templates/postgresql-deployment
 spec:
   owner: platform-team
   type: service
