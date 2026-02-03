@@ -1,0 +1,32 @@
+site_name: 'nginx-test-service'
+site_description: 'NGINX 테스트 웹서비스 - Backstage 템플릿으로 생성된 정적 사이트'
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Deployment: deployment.md
+  - Monitoring: monitoring.md
+  - Security: security.md
+  - Troubleshooting: troubleshooting.md
+
+plugins:
+  - techdocs-core
+
+theme:
+  name: material
+  palette:
+    primary: 'blue'
+    accent: 'blue'
+  features:
+    - navigation.tabs
+    - navigation.top
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - toc:
+      permalink: true

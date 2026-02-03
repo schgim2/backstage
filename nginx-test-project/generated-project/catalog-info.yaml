@@ -8,6 +8,7 @@ metadata:
     backstage.io/techdocs-ref: dir:.
     nginx.io/domain: localhost
     nginx.io/ssl-enabled: "false"
+    backstage.io/techdocs-entity: nginx-test-service
   tags:
     - nginx
     - web-service
