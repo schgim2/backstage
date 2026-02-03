@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: nginx-web-service
+    app.kubernetes.io/instance: ${{ values.name }}
+    app.kubernetes.io/component: web-server
+  {% if values.enableMonitoring %}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9113"
+    prometheus.io/path: "/metrics"
+  {% endif %}
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  {% if values.enableSSL %}
+  - name: https
+    port: 443
+    targetPort: https
+    protocol: TCP
+  {% endif %}
+  {% if values.enableMonitoring %}
+  - name: metrics
+    port: 9113
+    targetPort: metrics
+    protocol: TCP
+  {% endif %}
+  selector:
+    app.kubernetes.io/name: nginx-web-service
+    app.kubernetes.io/instance: ${{ values.name }}

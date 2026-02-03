@@ -1,0 +1,23 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: nginx-test-service
+  description: NGINX 테스트 웹서비스 - Backstage 템플릿으로 생성된 정적 사이트
+  annotations:
+    github.com/project-slug: test-org/nginx-test-service
+    backstage.io/techdocs-ref: dir:.
+    nginx.io/domain: localhost
+    nginx.io/ssl-enabled: "false"
+  tags:
+    - nginx
+    - web-service
+    - frontend
+    - static-site
+    - test
+spec:
+  type: website
+  lifecycle: production
+  owner: platform-team
+  system: web-infrastructure
+  dependsOn:
+    - resource:nginx-ingress
